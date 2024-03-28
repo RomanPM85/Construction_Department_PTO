@@ -14,6 +14,7 @@ def extract_archive_rar():
 
 
 def extract_archive_zip():
+    """ Function for extracting files from zip archives in the current folder """
     path_archives = Path.cwd().rglob('*.zip')
     path_extract_archive = Path.cwd()
     for archive in path_archives:
