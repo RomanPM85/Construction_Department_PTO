@@ -1,4 +1,5 @@
 import time
+import re
 from pathlib import Path
 
 
@@ -12,6 +13,7 @@ def rename_file_methods_one(file):
         replacements = {' ': '_', '.': '_', ')': '_', '(': '_'}
         replaced_chars = [replacements.get(char, char) for char in first_name]
         new_file = ''.join(replaced_chars)
+        new_file = del_dup(new_file)
         i.rename(new_file + i.suffix)
     print(f"Successfully!")
 
@@ -19,6 +21,18 @@ def rename_file_methods_one(file):
 def file_search():
     find_obj = input(f" Which files should I rename ? \n")
     return str(find_obj)
+
+
+def rename_file_methods_two(file):
+    current_dir = Path.cwd()
+    files = current_dir.glob(file)
+
+
+def del_dup(line):
+    stack = []
+    for char in line:
+        stack.pop() if stack and char == stack[-1] else stack.append(char)
+    return ''.join(stack)
 
 
 if __name__ == "__main__":
@@ -36,6 +50,7 @@ if __name__ == "__main__":
         rename_file_methods_one(file_search())
     elif start_script == '2':
         pass
+
     else:
         print(f"the code is not entered")
 print("--- %s seconds ---" % (time.time() - program_start_time))
