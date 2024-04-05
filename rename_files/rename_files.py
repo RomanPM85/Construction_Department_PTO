@@ -1,5 +1,4 @@
 import time
-import re
 from pathlib import Path
 
 
@@ -53,4 +52,4 @@ if __name__ == "__main__":
 
     else:
         print(f"the code is not entered")
-print("--- %s seconds ---" % (time.time() - program_start_time))
+    print("--- %s seconds ---" % (time.time() - program_start_time))
