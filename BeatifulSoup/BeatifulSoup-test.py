@@ -8,9 +8,9 @@ from urllib.error import HTTPError
 
 if __name__ == "__main__":
     # title = get_title('https://technical.city/ru/cpu/intel-rating')
-    html = urlopen('http://www.pythonscraping.com/pages/warandpeace.html')
+    html = urlopen('http://www.pythonscraping.com/pages/page3.html')
     bs = BeautifulSoup(html.read(), 'html.parser')
-    name_list = bs.find_all('span', {'class': 'green'})
-    for name in name_list:
-        print(name.get_text())
-
+    # for child in bs.find('table', {'id': 'giftList'}).children:
+    #     print(child)
+    for sibling in bs.find('table', {'id': 'giftList'}).tr.next_siblings:
+        print(sibling)
