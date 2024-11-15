@@ -4,48 +4,51 @@
 import imaplib
 import email
 import os
-from dotenv import load_dotenv
 
-# loading environment variables from a file .env
-load_dotenv()
-db_user = os.getenv('DB_USER')
-db_password = os.getenv('DB_PASSWORD')
-search_query = os.getenv('SEARCH_QUERY')
+# Параметры подключения
+
+
+mail_username = input(f"Введите свою почту =>:")
+mail_password = input(f"Введите свой пароль =>:")
+
 
 imap_server = 'imap.yandex.ru'
 imap_port = 993
 
-# Establishing a connection to the server
+# Установка соединения с сервером
 mail = imaplib.IMAP4_SSL(imap_server, imap_port)
-mail.login(db_user, db_password)
+mail.login(mail_username, mail_password)
 
-# Selecting a folder
+# Выбор папки
 folder_name = 'inbox'
 mail.select(folder_name)
 
-# Determining the addressee and attachment format
+# Определение адресата и формата вложения
+
+search_email = input(f"Введите email для скачивания =>:")
+search_query = '(FROM "' + str(search_email) + '")'
 file_extension = 'pdf'
 
-# The path to save attachments
-save_folder = input(f"enter the name of the folder to save")
-download_path = os.path.join(os.getcwd(), save_folder)
+# Путь для сохранения вложений
+name_folder = str(search_email)
+download_path = os.path.join(os.getcwd(), str(name_folder))
 
-# Creating a folder if it does not exist
+# Создание папки, если ее не существует
 if not os.path.exists(download_path):
     os.makedirs(download_path)
 
-# Search for emails
+# Поиск писем
 _, search_data = mail.search(None, search_query)
 
-# Getting a list of found email numbers
+# Получение списка номеров найденных писем
 message_numbers = search_data[0].split()
 
-# Iterating through the found emails
+# Итерация по найденным письмам
 for msg_num in message_numbers:
-    # Receiving a message
+    # Получение сообщения
     _, msg_data = mail.fetch(msg_num, '(RFC822)')
 
-    # Extracting data from a message
+    # Извлечение данных из сообщения
     msg = email.message_from_bytes(msg_data[0][1])
     date_str = msg['Date']
     date_tuple = email.utils.parsedate(date_str)
@@ -55,7 +58,7 @@ for msg_num in message_numbers:
         subject = subject.decode('utf-8')
     print(f'Downloading {subject} ({date})...')
 
-    # Processing an attachment
+    # Обработка вложения
     for part in msg.walk():
         if part.get_content_type() == f'application/{file_extension}':
             filename = part.get_filename()
@@ -66,7 +69,7 @@ for msg_num in message_numbers:
                 filename_str = filename_bytes
             filepath = os.path.join(download_path, f'{date}_{filename_str}')
 
-            # Saving an attachment
+            # Сохранение вложения
             if os.path.isfile(filepath):
                 print(f'File {filepath} already exists')
             else:
@@ -74,6 +77,6 @@ for msg_num in message_numbers:
                     f.write(part.get_payload(decode=True))
                 print(f'Successfully downloaded {filename_str}')
 
-# Closing the connection
+# Закрытие соединения
 mail.close()
 mail.logout()
