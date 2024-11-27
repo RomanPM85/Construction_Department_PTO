@@ -14,7 +14,7 @@ def returns_hash_file(file_path):
             if not data:
                 break
             sha256_hash.update(data)
-        return f'SHA-256:{sha256_hash.hexdigest()}, {str(file_path.name)} \n'
+        return f'SHA-256:{sha256_hash.hexdigest()},{str(file_path.name)} \n'
 
 
 def writes_text_file(self):
