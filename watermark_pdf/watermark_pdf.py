@@ -1,41 +1,23 @@
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from PIL import Image
+from PyPDF2 import PdfReader, PdfWriter
+from pathlib import Path
 
 
-def add_png_watermark_to_pdf(pdf_path, png_path, output_path):
-    """Adds a PNG watermark to each page of a PDF."""
+pdf_file = Path.cwd() / "input.pdf"
+watermark = Path.cwd() / "watermark.pdf"
+merged = Path.cwd() / "output_watermark.pdf"
 
-    try:
-        img = Image.open(png_path)
-        img_width, img_height = img.size
+with open(pdf_file, "rb") as input_file, open(watermark, "rb") as watermark_file:
+    input_pdf = PdfReader(input_file)  # opens the original file
 
-        pdf = canvas.Canvas(output_path, pagesize=letter)  # Assumes letter size. Change as needed
+    watermark_pdf = PdfReader(watermark)  # opens the watermarked file
+    watermark_page = watermark_pdf.pages[0]  # gets the first page of the watermark
 
-        # Open the PDF for reading
-        with open(pdf_path, "rb") as f:
-            pdf.setPageSize(letter)  # You might need to infer page size from the PDF metadata if it isn't letter
-            pdf.drawImage(png_path,
-                          letter[0] - img_width - 10,  # x position (10 pixels from right edge)
-                          10,  # y position (10 pixels from bottom edge)
-                          img_width,
-                          img_height,
-                          preserveAspectRatio=True)
+    output = PdfWriter()  # this will hold the new pages
 
-            """ Save the modified page (This is a simplified example - assumes the PDF is single page.
-             See below for multi-page handling)
-            """
-            pdf.save()
+    for i in range(len(input_pdf.pages)):  # go through each page
+        pdf_page = input_pdf.pages[i]
+        pdf_page.merge_page(watermark_page)  # combine the watermark and the current page
+        output.add_page(pdf_page)
 
-    except FileNotFoundError:
-        print(f"Error: PDF or PNG file not found.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-
-# Example Usage
-pdf_file = "input.pdf"
-png_watermark = "watermark.png"
-output_pdf = "output.pdf"
-
-add_png_watermark_to_pdf(pdf_file, png_watermark, output_pdf)
+    with open(merged, "wb") as merged_file:
+        output.write(merged_file)
