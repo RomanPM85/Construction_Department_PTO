@@ -38,8 +38,11 @@ def writes_text_file(self):
 
 def delete_file(self):
     """ a function that deletes all files """
-    Path.unlink(self)
-    return self
+    try:
+        Path.unlink(self)
+        return self
+    except FileNotFoundError:
+        pass
 
 
 if __name__ == "__main__":
