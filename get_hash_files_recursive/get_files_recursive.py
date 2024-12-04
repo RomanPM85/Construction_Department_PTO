@@ -1,5 +1,8 @@
+import datetime
 import hashlib
 from pathlib import Path
+from openpyxl import Workbook
+from openpyxl.styles import Font
 
 
 def get_filenames_recursive_pathlib(directory):
@@ -18,6 +21,7 @@ def get_filenames_recursive_pathlib(directory):
 
 def returns_hash_file(file_path):
     """ a function that returns a hash256 file """
+    write_date = datetime.datetime.now()
 
     sha256_hash = hashlib.new('sha256')
 
@@ -27,7 +31,8 @@ def returns_hash_file(file_path):
             if not data:
                 break
             sha256_hash.update(data)
-        return f'SHA-256,{sha256_hash.hexdigest()},{file_path.name},{file_path} \n'
+        # return f'SHA-256,{sha256_hash.hexdigest()},{file_path.name},{file_path} \n'
+        return str(write_date), file_path.name, sha256_hash.hexdigest(), str(file_path)
 
 
 def writes_text_file(self):
@@ -51,8 +56,19 @@ if __name__ == "__main__":
     print(welcome)
     directory_path = Path.cwd()
     all_files = get_filenames_recursive_pathlib(directory_path)
-    delete_file("sha256.txt")
+    # delete_file("sha256.txt")
+    wb = Workbook()
+    ws = wb.active
+
     for file in all_files:
+        rows = []
         sha256_file = returns_hash_file(file)
-        writes_text_file(str(sha256_file))
+        obj_fun = list(sha256_file)
+        rows.append(obj_fun)
+        for row in rows:
+            ws.append(row)
+
+        # sha256_file = returns_hash_file(file)
+        # writes_text_file(str(sha256_file))
         print(f"Successfully! {file.name}")
+    wb.save('register_documents.xlsx')
