@@ -97,6 +97,30 @@ def stops_the_program_to_write_data(sleep_duration):
     print("Программа проснулась!")
 
 
+def set_auto_column_width(filepath, sheet_name="Sheet"):
+    """Автоматически устанавливает ширину столбцов в файле Excel."""
+    try:
+        workbook = load_workbook(filepath)
+        sheet = workbook[sheet_name]
+        for col in sheet.columns:
+            max_length = 0
+            column = col[0].column_letter  # Буква столбца
+            for cell in col:
+                try:  # Обработка возможных ошибок при получении значения ячейки
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+
+                except:
+                    pass
+            adjusted_width = (max_length + 2) * 1.2  # Добавляем 2 символа запаса и коэф-т для ширины
+            sheet.column_dimensions[column].width = adjusted_width
+        workbook.save(filepath)
+    except FileNotFoundError:
+        print(f"Файл {filepath} не найден.")
+    except Exception as e:
+        print(f"Ошибка: {e}")
+
+
 if __name__ == "__main__":
     welcome = ("Hi, my name is Roman, this program is designed to get a hash of files written to an xlsx file \n"
                f"(The GNU General Public License v3.0) Mamchiy Roman https://github.com/RomanPM85")
@@ -124,3 +148,4 @@ if __name__ == "__main__":
 
     xlsx_file = "register_documents.xlsx"  # Замените на ваш файл
     add_hyperlinks(xlsx_file)
+    set_auto_column_width(xlsx_file)
