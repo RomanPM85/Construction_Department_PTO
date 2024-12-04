@@ -88,6 +88,15 @@ def add_hyperlinks(xlsx_filepath, sheet_name="Sheet", column_index=4):
         print(f"Произошла ошибка: {e}")
 
 
+def stops_the_program_to_write_data(sleep_duration):
+    # sleep_duration = 5
+    print(f"Даем время программе для записи данных в файл {sleep_duration} сек.")
+    for i in range(sleep_duration, 0, -1):
+        print(i)
+        time.sleep(1)
+    print("Программа проснулась!")
+
+
 if __name__ == "__main__":
     welcome = ("Hi, my name is Roman, this program is designed to get a hash of files written to an xlsx file \n"
                f"(The GNU General Public License v3.0) Mamchiy Roman https://github.com/RomanPM85")
@@ -111,6 +120,7 @@ if __name__ == "__main__":
         print(f"Successfully! {file.name}")
     wb.save('register_documents.xlsx')
 
-    time.sleep(10)
+    stops_the_program_to_write_data(5)
+
     xlsx_file = "register_documents.xlsx"  # Замените на ваш файл
     add_hyperlinks(xlsx_file)
