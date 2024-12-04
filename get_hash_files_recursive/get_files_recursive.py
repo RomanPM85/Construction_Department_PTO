@@ -1,8 +1,11 @@
 import datetime
 import hashlib
+import time
 from pathlib import Path
-from openpyxl import Workbook
+from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font
+from openpyxl.utils.cell import get_column_letter
+from openpyxl.styles import Font, Alignment
 
 
 def get_filenames_recursive_pathlib(directory):
@@ -50,6 +53,41 @@ def delete_file(self):
         pass
 
 
+def add_hyperlinks(xlsx_filepath, sheet_name="Sheet", column_index=4):
+    """Добавляет гиперссылки в XLSX файл.
+
+    Args:
+        xlsx_filepath: Путь к XLSX файлу.
+        sheet_name: Имя листа, в котором нужно создавать гиперссылки (по умолчанию "Sheet1").
+        column_index: Индекс столбца, содержащего пути к файлам (по умолчанию 1 - столбец A).
+    """
+
+    try:
+        workbook = load_workbook(xlsx_filepath)
+        sheet = workbook[sheet_name]
+
+        for iter_row in sheet.iter_rows():
+            cell = iter_row[column_index - 1]  # Индекс начинается с 0
+            if cell.value:  # Проверяем, есть ли значение в ячейке
+                try:
+                    #  Создаем гиперссылку.  Если путь некорректный - возникает исключение
+                    cell.hyperlink = cell.value
+                    cell.style = "Hyperlink"  # Применяем стиль гиперссылки
+                    font = Font(underline='single', color='0000FF')  # Цвет и подчеркивание
+                    cell.font = font
+                    cell.alignment = Alignment(horizontal='left', wrap_text=True)  # Выравнивание
+                except Exception as e:
+                    print(f"Ошибка при создании гиперссылки для ячейки {cell.coordinate}: {e}")
+
+        workbook.save(xlsx_filepath)  # Сохраняем изменения
+        print(f"Гиперссылки успешно добавлены в файл {xlsx_filepath}")
+
+    except FileNotFoundError:
+        print(f"Файл {xlsx_filepath} не найден.")
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
+
+
 if __name__ == "__main__":
     welcome = ("Hi, my name is Roman, this program is designed to get a hash of files written to an xlsx file \n"
                f"(The GNU General Public License v3.0) Mamchiy Roman https://github.com/RomanPM85")
@@ -72,3 +110,7 @@ if __name__ == "__main__":
         # writes_text_file(str(sha256_file))
         print(f"Successfully! {file.name}")
     wb.save('register_documents.xlsx')
+
+    time.sleep(10)
+    xlsx_file = "register_documents.xlsx"  # Замените на ваш файл
+    add_hyperlinks(xlsx_file)
