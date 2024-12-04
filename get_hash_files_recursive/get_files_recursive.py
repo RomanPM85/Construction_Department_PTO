@@ -51,7 +51,7 @@ def delete_file(self):
 
 
 if __name__ == "__main__":
-    welcome = ("Hi, my name is Roman, this program is for extracting rar archive files \n"
+    welcome = ("Hi, my name is Roman, this program is designed to get a hash of files written to an xlsx file \n"
                f"(The GNU General Public License v3.0) Mamchiy Roman https://github.com/RomanPM85")
     print(welcome)
     directory_path = Path.cwd()
