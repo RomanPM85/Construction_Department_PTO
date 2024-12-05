@@ -1,3 +1,4 @@
+from pathlib import Path
 from openpyxl import load_workbook, Workbook
 import os
 
@@ -34,10 +35,26 @@ def merge_xlsx_files(output_filepath, *input_filepaths):
         print(f"Произошла общая ошибка: {e}")
 
 
+def get_filenames_recursive_pathlib(directory):
+    """Recursively gets all filenames using pathlib."""
+    try:
+        path = Path(directory)
+        return [x for x in path.rglob('*.xlsx') if x.is_file()]  # Convert Path objects to strings.
+
+    except FileNotFoundError:
+        print(f"Error: Directory '{directory}' not found.")
+        return []
+    except OSError as e:
+        print(f"An error occurred: {e}")
+        return []
+
+
 if __name__ == "__main__":
     # Пример использования:
     output_file = "merged_file.xlsx"
-    input_files = ['file1', 'file2', 'file...']  # Замените на ваши файлы
+
+    directory_path = Path.cwd()
+    input_files = get_filenames_recursive_pathlib(directory_path)
 
     # Проверка существования файлов перед запуском
     if all(os.path.exists(file) for file in input_files):
