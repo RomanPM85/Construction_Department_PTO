@@ -58,7 +58,7 @@ def add_hyperlinks(xlsx_filepath, sheet_name="Sheet", column_index=4):
 
     Args:
         xlsx_filepath: Путь к XLSX файлу.
-        sheet_name: Имя листа, в котором нужно создавать гиперссылки (по умолчанию "Sheet1").
+        sheet_name: Имя листа, в котором нужно создавать гиперссылки (по умолчанию "Sheet").
         column_index: Индекс столбца, содержащего пути к файлам (по умолчанию 1 - столбец A).
     """
 
@@ -144,7 +144,7 @@ if __name__ == "__main__":
         print(f"Successfully! {file.name}")
     wb.save('register_documents.xlsx')
 
-    stops_the_program_to_write_data(5)
+    # stops_the_program_to_write_data(1)
 
     xlsx_file = "register_documents.xlsx"  # Замените на ваш файл
     add_hyperlinks(xlsx_file)
