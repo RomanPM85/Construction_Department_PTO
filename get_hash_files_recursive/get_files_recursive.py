@@ -25,6 +25,8 @@ def get_filenames_recursive_pathlib(directory):
 def returns_hash_file(file_path):
     """ a function that returns a hash256 file """
     write_date = datetime.datetime.now()
+    path_loc = Path(file_path)
+    local_paths = path_loc.relative_to(Path.cwd())
 
     sha256_hash = hashlib.new('sha256')
 
@@ -35,7 +37,7 @@ def returns_hash_file(file_path):
                 break
             sha256_hash.update(data)
         # return f'SHA-256,{sha256_hash.hexdigest()},{file_path.name},{file_path} \n'
-        return str(write_date), file_path.name, sha256_hash.hexdigest(), str(file_path)
+        return str(write_date), file_path.name, sha256_hash.hexdigest(), str(local_paths)
 
 
 def writes_text_file(self):
@@ -112,7 +114,7 @@ def set_auto_column_width(filepath, sheet_name="Sheet"):
 
                 except:
                     pass
-            adjusted_width = (max_length + 2) * 1.2  # Добавляем 2 символа запаса и коэф-т для ширины
+            adjusted_width = (max_length + 2) * 1.05  # Добавляем 2 символа запаса и коэф-т для ширины
             sheet.column_dimensions[column].width = adjusted_width
         workbook.save(filepath)
     except FileNotFoundError:
