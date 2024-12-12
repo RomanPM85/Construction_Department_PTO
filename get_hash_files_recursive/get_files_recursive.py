@@ -2,10 +2,11 @@ import datetime
 import hashlib
 import time
 from pathlib import Path
+
+import openpyxl
 from openpyxl import load_workbook, Workbook
-from openpyxl.styles import Font
 from openpyxl.utils.cell import get_column_letter
-from openpyxl.styles import Font, Alignment
+from openpyxl.styles import PatternFill, Alignment, Font, Border, Side
 
 
 def get_filenames_recursive_pathlib(directory):
@@ -68,7 +69,7 @@ def add_hyperlinks(xlsx_filepath, sheet_name="Sheet", column_index=4):
         workbook = load_workbook(xlsx_filepath)
         sheet = workbook[sheet_name]
 
-        for iter_row in sheet.iter_rows():
+        for iter_row in sheet.iter_rows(min_row=2):
             cell = iter_row[column_index - 1]  # Индекс начинается с 0
             if cell.value:  # Проверяем, есть ли значение в ячейке
                 try:
@@ -123,6 +124,99 @@ def set_auto_column_width(filepath, sheet_name="Sheet"):
         print(f"Ошибка: {e}")
 
 
+def add_header_to_excel(filepath, header_row):
+    """Добавляет строку заголовков в существующий файл Excel.
+
+    Args:
+        filepath: Путь к существующему файлу Excel.
+        header_row: Список значений для строки заголовков.
+    """
+    try:
+        workbook = load_workbook(filepath)
+        sheet = workbook.active
+        sheet.insert_rows(1, amount=1)  # Вставляем 1 строку перед первой строкой
+        # sheet.append(header_row)
+        # sheet[1] = header_row    # Записываем заголовки
+        for i, value in enumerate(header_row):
+            sheet.cell(row=1, column=i + 1, value=value)
+        workbook.save(filepath)
+        print(f"Заголовки добавлены к файлу {filepath}.")
+    except FileNotFoundError:
+        print(f"Файл {filepath} не найден.")
+    except Exception as e:
+        print(f"Ошибка: {e}")
+
+
+def format_first_row(filepath):
+    """
+    Форматирует первую строку листа: закрашивает, центрирует текст, делает жирным.
+    """
+    try:
+        workbook = load_workbook(filepath)
+        sheet = workbook.active
+
+        """ Получаем количество столбцов в первой строке.  Если лист пустой, 
+        это может вызвать ошибку, так что добавим обработку
+        """
+        try:
+            num_cols = len(sheet[1])
+        except IndexError:
+            print("Лист пустой, форматирование невозможно")
+            return
+
+        # Стиль заливки
+        fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")  # Желтый цвет
+
+        # Стиль выравнивания
+        alignment = Alignment(horizontal="center", vertical="center")
+
+        # Стиль шрифта
+        font = Font(bold=True)
+
+        #  Применение стилей к первой строке
+        for cell in sheet[1]:
+            cell.fill = fill
+            cell.alignment = alignment
+            cell.font = font
+
+        workbook.save(filepath)
+        print(f"Первая строка файла {filepath} отформатирована.")
+
+    except FileNotFoundError:
+        print(f"Файл {filepath} не найден.")
+    except Exception as e:
+        print(f"Ошибка: {e}")
+
+
+def add_border_to_data_cells(filepath):
+    """
+    Добавляет границу ко всем ячейкам с данными в файле Excel.
+
+    Args:
+        filepath: Путь к входному файлу Excel (.xlsx).
+    """
+    try:
+        workbook = load_workbook(filepath)
+        sheet = workbook.active  # Или укажите имя листа, если нужно
+
+        # thin_border = Border(all=Side(style="thin"))
+        thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                             top=Side(style='thin'), bottom=Side(style='thin'))
+
+        for row in sheet.iter_rows():
+            for cell in row:
+                if cell.value is not None:  # Проверяем, есть ли данные в ячейке
+                    cell.border = thin_border
+
+        workbook.save(filepath)
+        print(f"Границы добавлены в файл: {filepath}")
+
+    except FileNotFoundError:
+        print(f"Файл не найден: {filepath}")
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
+
+
 if __name__ == "__main__":
     welcome = ("Hi, my name is Roman, this program is designed to get a hash of files written to an xlsx file \n"
                f"(The GNU General Public License v3.0) Mamchiy Roman https://github.com/RomanPM85")
@@ -149,5 +243,15 @@ if __name__ == "__main__":
     # stops_the_program_to_write_data(1)
 
     xlsx_file = "register_documents.xlsx"  # Замените на ваш файл
+
+    header = ['date', 'file_name', 'sha256', 'path_file']
+    add_header_to_excel(xlsx_file, header)
+
     add_hyperlinks(xlsx_file)
+
+    format_first_row(xlsx_file)
+
     set_auto_column_width(xlsx_file)
+
+    add_border_to_data_cells(xlsx_file)
+    print(openpyxl.__version__)
