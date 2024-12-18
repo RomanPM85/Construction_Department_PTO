@@ -21,8 +21,25 @@ def rename_files(directory):
             print(f"Переименовано: {filename} -> {new_filename}")
 
 
+def safe_rename_files(directory, pattern, replacement=""):
+    """Переименовывает файлы, обрабатывая потенциальные ошибки."""
+    for filename in os.listdir(directory):
+        filepath = os.path.join(directory, filename)
+        if os.path.isfile(filepath):  # Проверка, является ли это файлом
+            new_filename = re.sub(pattern, replacement, filename)
+            if filename != new_filename:
+                new_filepath = os.path.join(directory, new_filename)
+            try:
+                os.rename(filepath, new_filepath)
+                print(f"Файл '{filename}' переименован в '{new_filename}'")
+            except OSError as e:
+                print(f"Ошибка переименования файла '{filename}': {e}")
+
 # Пример использования:
 # folder_path = os.getcwd()  # Текущая папка
 
-directory_to_rename = Path.cwd()  # Замените на путь к вашей папке
-rename_files(directory_to_rename)
+
+if __name__ == "__main__":
+    directory_to_rename = Path.cwd()  # Замените на путь к вашей папке
+    # rename_files(directory_to_rename)
+    safe_rename_files(directory_to_rename, r"[ \t\r\n]+")

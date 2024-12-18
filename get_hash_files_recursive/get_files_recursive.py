@@ -1,6 +1,7 @@
 import datetime
 import hashlib
 import time
+import webbrowser
 from pathlib import Path
 
 import openpyxl
@@ -255,3 +256,6 @@ if __name__ == "__main__":
 
     add_border_to_data_cells(xlsx_file)
     print(openpyxl.__version__)
+
+    url = (f'https://github.com/RomanPM85/Construction_Department_PTO/')
+    webbrowser.open_new(url)
