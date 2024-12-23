@@ -35,11 +35,19 @@ def safe_rename_files(directory, pattern, replacement=""):
             except OSError as e:
                 print(f"Ошибка переименования файла '{filename}': {e}")
 
-# Пример использования:
-# folder_path = os.getcwd()  # Текущая папка
+
+def removes_spaces_in_file_names():
+    path = Path.cwd()
+    files = path.glob('*/.dwg')
+    for file in files:
+        file_name = file.name
+        new_file_name = file_name.replace(' ', '')
+        save_file = Path.rename(file_name, new_file_name)
+        return save_file, print(f'файл: {file_name}, переименован в файл: {save_file}')
 
 
 if __name__ == "__main__":
     directory_to_rename = Path.cwd()  # Замените на путь к вашей папке
     # rename_files(directory_to_rename)
-    safe_rename_files(directory_to_rename, r"[ \t\r\n]+")
+    # safe_rename_files(directory_to_rename, r"[ \t\r\n]+")
+    removes_spaces_in_file_names()
