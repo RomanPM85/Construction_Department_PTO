@@ -239,11 +239,11 @@ if __name__ == "__main__":
         # sha256_file = returns_hash_file(file)
         # writes_text_file(str(sha256_file))
         print(f"Successfully! {file.name}")
-    wb.save('register_documents.xlsx')
+    wb.save(str(directory_path.name)+'.xlsx')
 
     # stops_the_program_to_write_data(1)
 
-    xlsx_file = "register_documents.xlsx"  # Замените на ваш файл
+    xlsx_file = str(directory_path.name)+'.xlsx' # Замените на ваш файл
 
     header = ['date', 'file_name', 'sha256', 'path_file']
     add_header_to_excel(xlsx_file, header)
