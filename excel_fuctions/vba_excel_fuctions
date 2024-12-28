@@ -1,0 +1,46 @@
+
+# Для преобразования значений в формате "1.1.2" или "10.1.2.5" в формат "011200" или "101250" в VBA,
+
+Function ConvertToFormattedString(inputString As String) As String
+    Dim parts() As String
+    Dim formattedString As String
+    Dim i As Integer
+
+    ' Разделяем строку по точкам
+    parts = Split(inputString, ".")
+
+    ' Проходим по всем частям
+    For i = LBound(parts) To UBound(parts)
+        ' Добавляем к формированной строке часть, отформатированную до 2 символов
+        formattedString = formattedString & Format(Val(parts(i)), "00")
+    Next i
+
+    ' Возвращаем отформатированную строку
+    ConvertToFormattedString = formattedString
+End Function
+
+
+Function ConvertToFixedLengthString(inputString As String) As String
+    Dim parts() As String
+    Dim formattedString As String
+    Dim i As Integer
+
+    ' Разделяем строку по точкам
+    parts = Split(inputString, ".")
+
+    ' Проходим по всем частям и формируем строку
+    For i = LBound(parts) To UBound(parts)
+        ' Добавляем к формированной строке часть, отформатированную до 2 символов
+        formattedString = formattedString & Format(Val(parts(i)), "00")
+    Next i
+
+    ' Убедимся, что строка имеет длину 7 символов
+    If Len(formattedString) < 7 Then
+        formattedString = formattedString & String(7 - Len(formattedString), "0") ' Добавляем нули в конце
+    ElseIf Len(formattedString) > 7 Then
+        formattedString = Left(formattedString, 7) ' Обрезаем до 7 символов
+    End If
+
+    ' Возвращаем отформатированную строку
+    ConvertToFixedLengthString = formattedString
+End Function
