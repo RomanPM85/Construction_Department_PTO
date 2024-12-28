@@ -239,11 +239,11 @@ if __name__ == "__main__":
         # sha256_file = returns_hash_file(file)
         # writes_text_file(str(sha256_file))
         print(f"Successfully! {file.name}")
-    wb.save('Реестр_'+str(directory_path.name)+'.xlsx')
+    wb.save('Реестр_папки_'+str(directory_path.name)+'.xlsx')
 
     # stops_the_program_to_write_data(1)
 
-    xlsx_file = 'Реестр_' + str(directory_path.name)+'.xlsx' # Замените на ваш файл
+    xlsx_file = 'Реестр_папки_' + str(directory_path.name)+'.xlsx'  # Замените на ваш файл
 
     header = ['date', 'file_name', 'sha256', 'path_file']
     add_header_to_excel(xlsx_file, header)
@@ -257,5 +257,5 @@ if __name__ == "__main__":
     add_border_to_data_cells(xlsx_file)
     print(openpyxl.__version__)
 
-    url = (f'https://github.com/RomanPM85/Construction_Department_PTO/')
+    url = f'https://github.com/RomanPM85/Construction_Department_PTO/'
     webbrowser.open_new(url)
