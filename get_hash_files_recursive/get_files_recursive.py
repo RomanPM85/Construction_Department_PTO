@@ -8,6 +8,7 @@ import openpyxl
 from openpyxl import load_workbook, Workbook
 from openpyxl.utils.cell import get_column_letter
 from openpyxl.styles import PatternFill, Alignment, Font, Border, Side
+from openpyxl.worksheet.filters import AutoFilter
 
 
 def get_filenames_recursive_pathlib(directory):
@@ -140,6 +141,7 @@ def add_header_to_excel(filepath, header_row):
         # sheet[1] = header_row    # Записываем заголовки
         for i, value in enumerate(header_row):
             sheet.cell(row=1, column=i + 1, value=value)
+        sheet.auto_filter.ref = sheet.dimensions
         workbook.save(filepath)
         print(f"Заголовки добавлены к файлу {filepath}.")
     except FileNotFoundError:
