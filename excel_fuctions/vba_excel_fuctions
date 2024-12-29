@@ -44,3 +44,28 @@ Function ConvertToFixedLengthString(inputString As String) As String
     ' Возвращаем отформатированную строку
     ConvertToFixedLengthString = formattedString
 End Function
+
+
+Function MD5Hash(ByVal inputString As String) As String
+    Dim objMD5 As Object
+    Dim arrData() As Byte
+    Dim i As Integer
+    Dim strHash As String
+
+    ' Создаем объект для хеширования
+    Set objMD5 = CreateObject("System.Security.Cryptography.MD5CryptoServiceProvider")
+
+    ' Преобразуем строку в массив байтов
+    arrData = StrConv(inputString, vbFromUnicode)
+
+    ' Вычисляем хеш
+    arrData = objMD5.ComputeHash_2(arrData)
+
+    ' Преобразуем массив байтов в строку
+    For i = LBound(arrData) To UBound(arrData)
+        strHash = strHash & LCase(Right("0" & Hex(arrData(i)), 2))
+    Next i
+
+    ' Возвращаем хеш
+    MD5Hash = strHash
+End Function
