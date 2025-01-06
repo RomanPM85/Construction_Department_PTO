@@ -7,7 +7,6 @@ import os
 
 # Параметры подключения
 
-
 mail_username = input(f"Введите свою почту =>:")
 mail_password = input(f"Введите свой пароль =>:")
 
@@ -26,7 +25,7 @@ mail.select(folder_name)
 # Определение адресата и формата вложения
 search_email = input(f"Введите email для скачивания =>:")
 search_query = '(FROM "' + str(search_email) + '")'
-# file_extension = 'DOCX'
+file_extension = 'pdf'
 
 # Путь для сохранения вложений
 name_folder = str(search_email)
@@ -59,9 +58,6 @@ for msg_num in message_numbers:
 
     # Обработка вложения
     for part in msg.walk():
-        if part.get_content_disposition() == 'attachment':
-            print(part.get_filename())
-
         if part.get_content_type() == f'application/{file_extension}':
             filename = part.get_filename()
             filename_bytes = email.header.decode_header(filename)[0][0]
