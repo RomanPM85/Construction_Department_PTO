@@ -1,14 +1,26 @@
 # Construction_Department_PTO
 ***
-  ### BeatifulSoup
+  ### aosr
 >
 >>
 ***
-  ### CR
+  ### archive
 >
 >>
 ***
-  ### archives
+  ### book_examples
+>
+>>
+***
+  ### construction_calculation_formulas
+>
+>>
+***
+  ### conver_jpg_to_pdf
+>
+>>
+***
+  ### convert_docx_to_pdf
 >
 >>
 ***
@@ -16,23 +28,35 @@
 >
 >>
 ***
-  ### create_folder
+  ### create_folder_from_excel
 >
 >>
 ***
-  ### get_filenames_recursive
+  ### crypto_file
 >
 >>
 ***
-  ### get_hash_files
+  ### document_search
 >
 >>
 ***
-  ### main
+  ### excel_fuctions
 >
 >>
 ***
-  ### parser_email
+  ### get_hash_files_recursive
+>
+>>
+***
+  ### heating_calculations
+>
+>>
+***
+  ### processes_images
+>
+>>
+***
+  ### python_script
 >
 >>
 ***
@@ -40,11 +64,15 @@
 >
 >>
 ***
-  ### sending_messages_to_mail
+  ### watermark_pdf
 >
 >>
 ***
-  ### watermwatermark_pdf
+  ### working_with_email
+>
+>>
+***
+  ### working_with_xlsx_books
 >
 >>
 ***
