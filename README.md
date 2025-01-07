@@ -24,6 +24,10 @@
 >
 >>
 ***
+  ### convert_docx_to_txt
+>
+>>
+***
   ### convert_pdf_to_jpg
 >
 >>
