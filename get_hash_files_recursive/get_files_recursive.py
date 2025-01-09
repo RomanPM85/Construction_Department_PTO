@@ -1,13 +1,15 @@
 import datetime
 import hashlib
+import os
 import time
 import webbrowser
 from pathlib import Path
+from datetime import date
 
 import openpyxl
 from openpyxl import load_workbook, Workbook
 from openpyxl.utils.cell import get_column_letter
-from openpyxl.styles import PatternFill, Alignment, Font, Border, Side
+from openpyxl.styles import PatternFill, Alignment, Font, Border, Side, NamedStyle
 from openpyxl.worksheet.filters import AutoFilter
 
 
@@ -39,8 +41,10 @@ def returns_hash_file(file_path):
             if not data:
                 break
             sha256_hash.update(data)
-        # return f'SHA-256,{sha256_hash.hexdigest()},{file_path.name},{file_path} \n'
-        return str(write_date), file_path.name, sha256_hash.hexdigest(), str(local_paths)
+
+    modification_date = get_file_modification_date(file_path)
+
+    return str(write_date), str(modification_date), file_path.name, sha256_hash.hexdigest(), str(local_paths)
 
 
 def writes_text_file(self):
@@ -58,7 +62,7 @@ def delete_file(self):
         pass
 
 
-def add_hyperlinks(xlsx_filepath, sheet_name="Sheet", column_index=4):
+def add_hyperlinks(xlsx_filepath, sheet_name="Sheet", column_index=5):
     """Добавляет гиперссылки в XLSX файл.
 
     Args:
@@ -220,6 +224,32 @@ def add_border_to_data_cells(filepath):
         print(f"Произошла ошибка: {e}")
 
 
+def get_file_modification_date(file_path):
+    # Проверяем, существует ли файл
+    if not os.path.exists(file_path):
+        print(f"Файл {file_path} не найден.")
+        return None
+
+    # Получаем время последнего изменения
+    modification_time = os.path.getmtime(file_path)
+
+    # Преобразуем временную метку в читаемый формат
+    readable_time = date.fromtimestamp(modification_time).strftime('%Y-%m-%d %H:%M:%S')
+    return readable_time
+
+
+def formats_column_to_date(file_path):
+    workbook = openpyxl.load_workbook(file_path)
+    sheet = workbook.active
+    date_style = NamedStyle(name='date_style', number_format='YYYY-MM-DD')
+    for row in range(2, sheet.max_row + 1):
+        cell = sheet.cell(row=row, column=2)
+        cell.style = date_style
+    workbook.save(file_path)
+    print(f"Добавлены формат даты в файл: {file_path}")
+
+
+
 if __name__ == "__main__":
     welcome = ("Hi, my name is Roman, this program is designed to get a hash of files written to an xlsx file \n"
                f"(The GNU General Public License v3.0) Mamchiy Roman https://github.com/RomanPM85")
@@ -247,8 +277,9 @@ if __name__ == "__main__":
 
     xlsx_file = 'Реестр_папки_' + str(directory_path.name) + '.xlsx'  # Замените на ваш файл
 
-    header = ['date', 'file_name', 'sha256', 'path_file']
+    header = ['date_update', 'modification_date', 'file_name', 'sha256', 'path_file',]
     add_header_to_excel(xlsx_file, header)
+    formats_column_to_date(xlsx_file)
 
     add_hyperlinks(xlsx_file)
 
@@ -257,6 +288,7 @@ if __name__ == "__main__":
     set_auto_column_width(xlsx_file)
 
     add_border_to_data_cells(xlsx_file)
+
     print(openpyxl.__version__)
 
     # url = f'https://github.com/RomanPM85/Construction_Department_PTO/'
