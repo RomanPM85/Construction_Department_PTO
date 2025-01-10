@@ -78,8 +78,8 @@ if __name__ == "__main__":
     start_programme = input(f'Для запуска программы введите Y\n=>')
     if start_programme == 'Y':
         try:
-            FILE_XLSX = 'file.xlsx'
-            FILE_CSV = 'file.csv'
+            FILE_XLSX = 'data_xlsx.xlsx'
+            FILE_CSV = 'data_xlsx.csv'
             convert_pd_xlsx_to_csv(FILE_XLSX, FILE_CSV)
             today_date = date.today().strftime("%Y-%m-%d")
             current_date = str(today_date)
