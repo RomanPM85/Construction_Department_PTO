@@ -18,13 +18,13 @@ def sends_messages(name_task, final, recipients, copy_recipients):
     server = 'smtp.yandex.ru'
     user = 'your_email'
     password = 'your_password'
-    sender = 'r.mamchiy@ingacademy.ru'
+    sender = 'sender_email@company.ru'
     subject = f'{name_task}'
 
     text = f'{name_task} '
     text_final = f'Дата выдачи {final}'
     signature = 'С уважением ООО "'
-    html = ('<html><head></head><body><h3>Доброго дня!</h3><p>Напоминаем о сроке выдачи следующего документа:</p>'
+    html = ('<html><head></head><body><h3>Добрый день!</h3><p>Напоминаем о сроке выдачи следующего документа:</p>'
             '<h4>' + text + '</h4><p>' + text_final + '</p><p>' + signature + '</p> </body></html>')
 
     msg = MIMEMultipart('alternative')
