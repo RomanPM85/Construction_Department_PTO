@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+from collections import defaultdict
 
 import pandas as pd
 import sqlite3
@@ -38,6 +39,16 @@ def filter_selected_query(query, *args) -> list:
     return select_all
 
 
+def list_of_tuples_to_dict(data_value):
+    """Преобразует список кортежей в словарь, используя defaultdict."""
+    result_dict = defaultdict(list)
+    for item in data_value:
+        key = item[0]
+        value = item[1:]
+        result_dict[key].append(value)
+    return dict(result_dict)
+
+
 if __name__ == "__main__":
 
     status = 0
@@ -52,7 +63,7 @@ if __name__ == "__main__":
     id_2 = 42
     get_query_2 = filter_selected_query(query_2, status, recipients, id_2, result_date)
 
-    query_3 = ("SELECT id, recipients, task_name, date_message, result_date FROM message_database "
+    query_3 = ("SELECT recipients, task_name, date_message, result_date FROM message_database "
              "WHERE status = ? "
              "AND recipients = ? "
              "AND result_date > ?")
@@ -64,3 +75,9 @@ if __name__ == "__main__":
     for i in get_query_3:
         print(i)
     print("_" * 40)
+
+    query_result_date = list_of_tuples_to_dict(get_query_3)
+    for key in query_result_date.values():
+        item = key
+        for i in item:
+            print(i)
