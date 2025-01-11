@@ -39,17 +39,28 @@ def filter_selected_query(query, *args) -> list:
 
 
 if __name__ == "__main__":
-    status_2 = 0
-    id_2 = 42
-    recipients_2 = 'recipients_2@company.ru'
-    result_date_2 = date.today().strftime("%Y-%m-%d")
+
+    status = 0
+    recipients = 'recipients_2@company.ru'
+    result_date = date.today().strftime("%Y-%m-%d")
+
     query_2 = ("SELECT id, recipients, task_name, date_message, result_date FROM message_database "
              "WHERE status = ? "
              "AND recipients = ? "
              "AND id = ? "
              "AND result_date > ?")
+    id_2 = 42
+    get_query_2 = filter_selected_query(query_2, status, recipients, id_2, result_date)
 
-    get_list_2 = filter_selected_query(query_2, status_2, recipients_2, id_2, result_date_2)
+    query_3 = ("SELECT id, recipients, task_name, date_message, result_date FROM message_database "
+             "WHERE status = ? "
+             "AND recipients = ? "
+             "AND result_date > ?")
+    get_query_3 = filter_selected_query(query_3, status, recipients, result_date)
 
-    for i in get_list_2:
+    for i in get_query_2:
         print(i)
+    print("_" * 40)
+    for i in get_query_3:
+        print(i)
+    print("_" * 40)
