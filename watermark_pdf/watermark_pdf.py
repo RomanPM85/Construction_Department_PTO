@@ -1,23 +1,51 @@
 from PyPDF2 import PdfReader, PdfWriter
-from pathlib import Path
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
+from io import BytesIO
 
 
-pdf_file = Path.cwd() / "input.pdf"
-watermark = Path.cwd() / "watermark.pdf"
-merged = Path.cwd() / "output_watermark.pdf"
+def create_watermark(image_path):
+    """Создает PDF с водяным знаком из изображения."""
+    packet = BytesIO()
+    can = canvas.Canvas(packet, pagesize=A4)
 
-with open(pdf_file, "rb") as input_file, open(watermark, "rb") as watermark_file:
-    input_pdf = PdfReader(input_file)  # opens the original file
+    # Загрузка изображения
+    img = ImageReader(image_path)
 
-    watermark_pdf = PdfReader(watermark)  # opens the watermarked file
-    watermark_page = watermark_pdf.pages[0]  # gets the first page of the watermark
+    # Размеры страницы
+    width, height = A4
 
-    output = PdfWriter()  # this will hold the new pages
+    # Наложение изображения (можно настроить размер и положение)
+    can.drawImage(img, x=100, y=100, width=width - 200, height=height - 200, mask='auto', preserveAspectRatio=True)
+    can.save()
 
-    for i in range(len(input_pdf.pages)):  # go through each page
-        pdf_page = input_pdf.pages[i]
-        pdf_page.merge_page(watermark_page)  # combine the watermark and the current page
-        output.add_page(pdf_page)
+    packet.seek(0)
+    return PdfReader(packet)
 
-    with open(merged, "wb") as merged_file:
-        output.write(merged_file)
+
+def add_watermark(input_pdf, output_pdf, watermark):
+    """Накладывает водяной знак на каждую страницу PDF."""
+    reader = PdfReader(input_pdf)
+    writer = PdfWriter()
+
+    watermark_page = watermark.pages[0]
+
+    for i in range(len(reader.pages)):
+        page = reader.pages[i]
+        page.merge_page(watermark_page)
+        writer.add_page(page)
+
+    with open(output_pdf, "wb") as output_pdf_file:
+        writer.write(output_pdf_file)
+
+
+if __name__ == "__main__":
+    input_pdf = "input.pdf"  # Исходный PDF-файл
+    output_pdf = "output.pdf"  # Выходной PDF-файл с водяным знаком
+    watermark_image = "watermark.png"  # Путь к изображению водяного знака
+
+    watermark = create_watermark(watermark_image)
+    add_watermark(input_pdf, output_pdf, watermark)
+
+    print(f"Водяной знак успешно наложен. Результат сохранен в {output_pdf}")
