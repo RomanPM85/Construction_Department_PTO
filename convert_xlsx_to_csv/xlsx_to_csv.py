@@ -8,6 +8,6 @@ def converts_xlsx_to_csv(file_xlsx, file_csv):
 
 
 if __name__ == "__main__":
-    input_file = 'input_file.xlsx'
-    output_file = 'output_file.csv'
+    input_file = 'contacts_tcsm_.xlsx'
+    output_file = 'contacts_tcsm.csv'
     converts_xlsx_to_csv(input_file, output_file)
