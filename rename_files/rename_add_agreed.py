@@ -7,13 +7,16 @@ def add_suffix_to_latest_file(root_dir: Path, suffix="_agreed"):
             if not files:
                 continue
 
-            # Находим файл с максимальным временем изменения
+            # Если в папке есть файл с суффиксом, пропускаем всю папку
+            if any(suffix in f.stem for f in files):
+                print(f"Пропущена папка (найден файл с суффиксом): {folder}")
+                continue
+
+            # Ищем последний изменённый файл
             latest_file = max(files, key=lambda f: f.stat().st_mtime)
 
-            # Формируем новое имя с суффиксом перед расширением
             new_name = latest_file.with_name(latest_file.stem + suffix + latest_file.suffix)
 
-            # Переименование
             latest_file.rename(new_name)
             print(f"Переименован: {latest_file} -> {new_name}")
 
