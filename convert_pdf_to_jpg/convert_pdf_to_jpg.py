@@ -37,13 +37,12 @@ def delete_folder():
             shutil.rmtree(os.path.join(item))
 
 
-def create_list_folder(self):
-    files = Path.cwd().glob(self)
-    return files
+def create_list_folder(pattern):
+    files = Path.cwd().glob(pattern)
+    return list(files)
 
 
 def create_folder(name_dir):
-    # name_dir.replace(" ", "")
     output_folder = Path.cwd()
     if not os.path.isdir(name_dir):
         os.mkdir(name_dir)
@@ -65,27 +64,33 @@ if __name__ == "__main__":
                          )
 
     if start_script == '1':
-        pattern_file = input(f"какие файлы преобразовать ? /n"
-                             f"==>")
-        folders = create_list_folder(pattern_file)
-        for i in folders:
-            first_name = i.stem
-            new_name = first_name.replace(" ", "")
-            create_folder(new_name)
-            convert_pdf_to_jpg(i, new_name)
+        # Замена input на список файлов
+        pattern_files = [
+            '*.pdf',  # Пример: все PDF файлы в текущей директории
+            'documents/*.pdf',  # Пример: PDF файлы в поддиректории documents
+            # Добавьте сюда нужные пути/шаблоны
+        ]
+
+        for pattern_file in pattern_files:
+            folders = create_list_folder(pattern_file)
+            for i in folders:
+                first_name = i.stem
+                new_name = first_name.replace(" ", "")
+                create_folder(new_name)
+                convert_pdf_to_jpg(i, new_name)
 
     elif start_script == '2':
-        input_file = input(f"Введите имя папки месторасположения jpg файлов")
+        input_file = input(f"Введите имя папки месторасположения jpg файлов: ")
         convert_jpg_to_pdf(input_file)
     elif start_script == '3':
         delete_folder()
     elif start_script == '4':
-        folders = create_list_folder()
+        folders = create_list_folder('*.pdf')
         for i in folders:
             first_name = i.stem
             new_name = first_name.replace(" ", "")
             create_folder(new_name)
 
     else:
-        print(f"код введен неверно")
+        print(f"Код введен неверно")
     print("--- %s seconds ---" % (time.time() - start_time))
