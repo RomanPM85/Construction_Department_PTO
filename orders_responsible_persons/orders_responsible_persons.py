@@ -2,6 +2,10 @@ from docx import Document
 from docx.shared import Pt, Cm, Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT, WD_LINE_SPACING
 
+from docx import Document
+from docx.shared import Pt, Cm, Inches
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT, WD_LINE_SPACING
+
 def create_order_doc(filename, title, city, date, order_number, content_lines, signatures):
     doc = Document()
 
@@ -66,6 +70,12 @@ def create_order_doc(filename, title, city, date, order_number, content_lines, s
 
     doc.add_paragraph()
 
+    # Включаем информацию об объекте в нужную строку content_lines
+    for i, line in enumerate(content_lines):
+        if line.startswith("В целях обеспечения"):
+            content_lines[i] = line.rstrip('.') + " на объекте 'Здание Физкультурно-оздоровительного комплекса, расположенное по адресу: МО, Одинцовский городской округ, п. Барвиха, КИЗ Яблоневый Сад'."
+            break
+
     # Основной текст приказа
     for line in content_lines:
         p = doc.add_paragraph(line)
@@ -94,6 +104,7 @@ def create_order_doc(filename, title, city, date, order_number, content_lines, s
     doc.save(filename)
 
 
+
 if __name__ == "__main__":
     city = "Москва"
     date = "03.07.2025"
@@ -102,7 +113,7 @@ if __name__ == "__main__":
     orders = [
         {
             "filename": "Приказ_по_организации_работ_на_высоте.docx",
-            "title": "О назначении ответственного за организацию работ на высоте",
+            "title": "О назначении ответственного за организацию работ на высоте на ",
             "order_number": "20",
             "content": [
                 "В целях обеспечения безопасности при выполнении работ на высоте,",
@@ -124,7 +135,7 @@ if __name__ == "__main__":
             "title": "О проведении инструктажа по охране труда",
             "order_number": "21",
             "content": [
-                "В целях повышения уровня безопасности труда на объекте,",
+                "В целях повышения уровня безопасности труда ,",
                 "ПРИКАЗЫВАЮ:",
                 "1. Организовать проведение вводного и первичного инструктажа по охране труда для всех новых работников.",
                 "2. Ответственным за проведение инструктажей назначить следующего сотрудника:",
@@ -212,7 +223,7 @@ if __name__ == "__main__":
         },
         {
             "filename": "Приказ_по_техническому_надзору.docx",
-            "title": "О назначении ответственного за технический надзор на объекте",
+            "title": "О назначении ответственного за технический надзор ",
             "order_number": "18",
             "content": [
                 "В целях контроля качества и безопасности строительно-монтажных работ,",
@@ -247,6 +258,22 @@ if __name__ == "__main__":
                 "3. Контроль за исполнением настоящего приказа возложить на начальника строительного участка."
             ],
             "signatures": {"director": director_name, "responsible": "Смирнов А.В."}
+        },
+        {
+            "filename": "Приказ_по_электробезопасности.docx",
+            "title": "Об обеспечении электробезопасности",
+            "order_number": "23",
+            "content": [
+                "В целях обеспечения электробезопасности ,",
+                "ПРИКАЗЫВАЮ:",
+                "1. Назначить ответственного за электробезопасность следующего сотрудника:",
+                "   ФИО: Сидоров Владимир Николаевич",
+                "   Должность: Инженер по охране труда",
+                "2. Провести инструктаж с сотрудниками по электробезопасности и обеспечить регулярное обновление знаний.",
+                "3. Обеспечить техническое обслуживание и проверку электрооборудования.",
+                "4. Контроль за исполнением настоящего приказа возложить на начальника отдела охраны труда."
+            ],
+            "signatures": {"director": director_name, "responsible": "Сидоров В.Н."}
         }
     ]
 
