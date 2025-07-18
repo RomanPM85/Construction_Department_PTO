@@ -6,7 +6,6 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 
-
 from config import TOKEN, GROUPS
 
 moscow_tz = pytz.timezone("Europe/Moscow")
@@ -131,16 +130,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Отчёт на сегодня уже получен.")
 
-async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+async def post_init(application):
+    """Запускаем фоновые задачи после инициализации приложения"""
+    asyncio.create_task(schedule_tasks(application))
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    asyncio.create_task(schedule_tasks(app))
-
     print("Бот запущен и работает...")
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
