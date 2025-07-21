@@ -15,7 +15,7 @@ def convert_pdf_to_docx(pdf_path, docx_path):
 
 
 # Пример использования
-pdf_file_path = "your_file.pdf"  # Путь к исходному файлу
+pdf_file_path = "pdf_file.pdf"  # Путь к исходному файлу
 docx_file_path = "your_file.docx"  # Путь к выходному файлу
 
 if convert_pdf_to_docx(pdf_file_path, docx_file_path):
