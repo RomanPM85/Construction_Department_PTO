@@ -14,6 +14,7 @@ moscow_tz = pytz.timezone("Europe/Moscow")
 conn = sqlite3.connect("reports.db", check_same_thread=False)
 cursor = conn.cursor()
 
+# Создаем таблицу для хранения отчетов, если она не существует
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,10 +40,10 @@ CREATE TABLE IF NOT EXISTS sent_messages (
 """)
 conn.commit()
 
-# Состояния для ConversationHandler
+# Состояние для ConversationHandler — ожидание отчета
 WAITING_FOR_REPORT = 1
 
-# Словарь для хранения контекста ожидания отчета
+# Словарь для хранения контекста ожидания отчета от пользователей
 waiting_for_report = {}
 
 
@@ -61,7 +62,7 @@ async def send_report_request_in_group(app, group_id, user_id, report_type, is_r
         else:
             text = f"Добрый вечер, [{user_name}](tg://user?id={user_id})! Пожалуйста, пришлите краткий отчёт о выполненных работах."
 
-    # Создаем клавиатуру с кнопкой для отправки отчета
+    # Создаем клавиатуру с кнопкой для отправки отчёта
     keyboard = [[InlineKeyboardButton("📝 Отправить отчёт", callback_data=f"report_{report_type}_{user_id}_{group_id}")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -73,7 +74,7 @@ async def send_report_request_in_group(app, group_id, user_id, report_type, is_r
             reply_markup=reply_markup
         )
 
-        # Записываем отправку сообщения
+        # Записываем факт отправки сообщения в базу
         now = datetime.now(moscow_tz)
         message_type = f"{report_type}_{'reminder' if is_reminder else 'initial'}"
         cursor.execute("""
@@ -87,7 +88,7 @@ async def send_report_request_in_group(app, group_id, user_id, report_type, is_r
 
 
 async def check_last_message_time(user_id, group_id, message_type, date):
-    """Проверяет, прошло ли 5 минут с последнего сообщения"""
+    """Проверяет, прошло ли 60 минут с последнего сообщения данного типа"""
     cursor.execute("""
     SELECT sent_at FROM sent_messages 
     WHERE date=? AND user_id=? AND group_id=? AND message_type LIKE ?
@@ -100,13 +101,13 @@ async def check_last_message_time(user_id, group_id, message_type, date):
         if isinstance(last_sent, str):
             last_sent = datetime.strptime(last_sent, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=moscow_tz)
         now = datetime.now(moscow_tz)
-        # Изменено с 1 часа на 5 минут
+        # Возвращаем True, если прошло не менее 60 минут
         return (now - last_sent) >= timedelta(minutes=60)
     return True
 
 
 async def schedule_tasks(app):
-    # Флаги для отслеживания первой отправки
+    # Флаги для отслеживания отправленных первых сообщений
     morning_initial_sent = {}
     evening_initial_sent = {}
 
@@ -126,23 +127,23 @@ async def schedule_tasks(app):
                 evening_initial_sent[group_id] = {}
 
             for user_id in users:
-                # Проверяем утренний отчет
+                # Проверяем, отправлен ли утренний отчет сегодня
                 cursor.execute("""
                 SELECT COUNT(*) FROM reports 
                 WHERE date=? AND user_id=? AND report_type='morning' AND group_id=?
                 """, (today_str, user_id, group_id))
                 morning_sent = cursor.fetchone()[0] > 0
 
-                # Проверяем вечерний отчет
+                # Проверяем, отправлен ли вечерний отчет сегодня
                 cursor.execute("""
                 SELECT COUNT(*) FROM reports 
                 WHERE date=? AND user_id=? AND report_type='evening' AND group_id=?
                 """, (today_str, user_id, group_id))
                 evening_sent = cursor.fetchone()[0] > 0
 
-                # Утренние сообщения (10:00 - 19:00)
+                # Утренние сообщения (с 10:00 до 19:00)
                 if morning_time <= current_time < evening_time and not morning_sent:
-                    # Проверяем, отправляли ли уже первое сообщение сегодня
+                    # Проверяем, отправляли ли уже первое утреннее сообщение сегодня
                     if user_id not in morning_initial_sent[group_id]:
                         cursor.execute("""
                         SELECT COUNT(*) FROM sent_messages 
@@ -155,11 +156,11 @@ async def schedule_tasks(app):
                         await send_report_request_in_group(app, group_id, user_id, "morning", is_reminder=False)
                         morning_initial_sent[group_id][user_id] = True
                     else:
-                        # Отправляем напоминания каждые 5 минут
+                        # Отправляем напоминания каждые 60 минут
                         if await check_last_message_time(user_id, group_id, "morning", today_str):
                             await send_report_request_in_group(app, group_id, user_id, "morning", is_reminder=True)
 
-                # Вечерние сообщения (19:00 - 23:00)
+                # Вечерние сообщения (с 19:00 и далее)
                 if current_time >= evening_time and not evening_sent:
                     # Проверяем, отправляли ли уже первое вечернее сообщение сегодня
                     if user_id not in evening_initial_sent[group_id]:
@@ -174,16 +175,16 @@ async def schedule_tasks(app):
                         await send_report_request_in_group(app, group_id, user_id, "evening", is_reminder=False)
                         evening_initial_sent[group_id][user_id] = True
                     else:
-                        # Отправляем напоминания каждые 5 минут
+                        # Отправляем напоминания каждые 60 минут
                         if await check_last_message_time(user_id, group_id, "evening", today_str):
                             await send_report_request_in_group(app, group_id, user_id, "evening", is_reminder=True)
 
-        # Сбрасываем флаги в полночь
+        # Сбрасываем флаги в полночь (до 00:01)
         if current_time < time(0, 1, 0):
             morning_initial_sent.clear()
             evening_initial_sent.clear()
 
-        await asyncio.sleep(30)  # Проверяем каждые 30 секунд для более точного срабатывания
+        await asyncio.sleep(30)  # Проверяем каждые 30 секунд для точности
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,19 +197,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user_id = int(parts[2])
         group_id = int(parts[3])
 
-        # Проверяем, что кнопку нажал нужный пользователь
+        # Проверяем, что кнопку нажал именно тот пользователь, для которого она предназначена
         if query.from_user.id != target_user_id:
             await query.answer("Эта кнопка предназначена для другого пользователя!", show_alert=True)
             return
 
-        # Сохраняем контекст для ожидания отчета
+        # Сохраняем контекст ожидания отчёта
         waiting_for_report[target_user_id] = {
             "report_type": report_type,
             "group_id": group_id,
             "message_id": query.message.message_id
         }
 
-        # Отправляем личное сообщение пользователю
+        # Отправляем личное сообщение пользователю с просьбой отправить отчёт
         report_name = "утренний отчёт о количестве людей" if report_type == "morning" else "вечерний отчёт о выполненных работах"
         await context.bot.send_message(
             chat_id=target_user_id,
@@ -224,7 +225,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
-    # Проверяем, ожидаем ли мы отчет от этого пользователя
+    # Проверяем, ожидаем ли отчёт от этого пользователя
     if user_id in waiting_for_report:
         report_info = waiting_for_report[user_id]
         report_type = report_info["report_type"]
@@ -233,7 +234,7 @@ async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_T
         today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
         text = update.message.text
 
-        # Сохраняем отчет в базу данных
+        # Сохраняем отчёт в базу данных
         cursor.execute("""
         INSERT INTO reports (date, user_id, response, report_type, company, group_id) 
         VALUES (?, ?, ?, ?, ?, ?)
@@ -243,7 +244,7 @@ async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_T
         # Отправляем подтверждение пользователю
         await update.message.reply_text("✅ Спасибо! Ваш отчёт принят.")
 
-        # Отправляем отчет в группу
+        # Формируем сообщение с отчётом для группы
         user_name = GROUPS[group_id][user_id]["name"]
         company = GROUPS[group_id][user_id]["company"]
         report_title = "Утренний отчёт" if report_type == "morning" else "Вечерний отчёт"
@@ -264,10 +265,10 @@ async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.MARKDOWN
         )
 
-        # Удаляем из ожидающих
+        # Удаляем пользователя из списка ожидающих отчёт
         del waiting_for_report[user_id]
     else:
-        # Если не ожидаем отчет, проверяем, зарегистрирован ли пользователь
+        # Если отчёт не ожидается, проверяем, зарегистрирован ли пользователь в группах
         user_groups = [gid for gid, users in GROUPS.items() if user_id in users]
         if user_groups:
             await update.message.reply_text(
@@ -288,7 +289,7 @@ async def post_init(application):
 def main():
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
-    # Обработчик кнопок
+    # Обработчик нажатий кнопок
     app.add_handler(CallbackQueryHandler(button_handler))
 
     # Обработчик личных сообщений
@@ -297,7 +298,7 @@ def main():
         handle_private_message
     ))
 
-    # Обработчик групповых сообщений (если нужно)
+    # Обработчик сообщений в группах (если нужно)
     app.add_handler(MessageHandler(
         filters.TEXT & filters.ChatType.GROUPS & (~filters.COMMAND),
         handle_group_message
