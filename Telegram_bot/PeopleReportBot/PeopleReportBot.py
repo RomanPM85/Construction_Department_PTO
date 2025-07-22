@@ -87,6 +87,39 @@ async def send_report_request_in_group(app, group_id, user_id, report_type, is_r
         print(f"Ошибка при отправке сообщения в группу {group_id}: {e}")
 
 
+async def send_pending_reports_notification(app, group_id, report_type):
+    today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
+    users = GROUPS[group_id]
+
+    pending_users = []
+
+    for user_id, user_data in users.items():
+        cursor.execute("""
+        SELECT COUNT(*) FROM reports 
+        WHERE date=? AND user_id=? AND report_type=? AND group_id=?
+        """, (today_str, user_id, report_type, group_id))
+        sent = cursor.fetchone()[0] > 0
+        if not sent:
+            pending_users.append(user_data["name"])
+
+    if not pending_users:
+        if report_type == "morning":
+            text = "☀️ Все утренние отчёты получены."
+        else:
+            text = "🌙 Все вечерние отчёты получены."
+    else:
+        if report_type == "morning":
+            text = "☀️ *Ожидаются утренние отчёты от:*\n" + "\n".join(f"• {name}" for name in pending_users)
+        else:
+            text = "🌙 *Ожидаются вечерние отчёты от:*\n" + "\n".join(f"• {name}" for name in pending_users)
+
+    await app.bot.send_message(
+        chat_id=group_id,
+        text=text,
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+
 async def check_last_message_time(user_id, group_id, message_type, date):
     """Проверяет, прошло ли 60 минут с последнего сообщения данного типа"""
     cursor.execute("""
@@ -111,6 +144,9 @@ async def schedule_tasks(app):
     morning_initial_sent = {}
     evening_initial_sent = {}
 
+    morning_summary_sent = set()  # Чтобы отправить раз в день
+    evening_summary_sent = set()
+
     while True:
         now = datetime.now(moscow_tz)
         today_str = now.strftime("%Y-%m-%d")
@@ -120,7 +156,6 @@ async def schedule_tasks(app):
         evening_time = time(19, 0, 0)
 
         for group_id, users in GROUPS.items():
-            # Инициализируем флаги для новой группы
             if group_id not in morning_initial_sent:
                 morning_initial_sent[group_id] = {}
             if group_id not in evening_initial_sent:
@@ -143,7 +178,6 @@ async def schedule_tasks(app):
 
                 # Утренние сообщения (с 10:00 до 19:00)
                 if morning_time <= current_time < evening_time and not morning_sent:
-                    # Проверяем, отправляли ли уже первое утреннее сообщение сегодня
                     if user_id not in morning_initial_sent[group_id]:
                         cursor.execute("""
                         SELECT COUNT(*) FROM sent_messages 
@@ -152,17 +186,11 @@ async def schedule_tasks(app):
                         morning_initial_sent[group_id][user_id] = cursor.fetchone()[0] > 0
 
                     if not morning_initial_sent[group_id][user_id]:
-                        # Отправляем первое утреннее сообщение
                         await send_report_request_in_group(app, group_id, user_id, "morning", is_reminder=False)
                         morning_initial_sent[group_id][user_id] = True
-                    else:
-                        # Отправляем напоминания каждые 60 минут
-                        if await check_last_message_time(user_id, group_id, "morning", today_str):
-                            await send_report_request_in_group(app, group_id, user_id, "morning", is_reminder=True)
 
                 # Вечерние сообщения (с 19:00 и далее)
                 if current_time >= evening_time and not evening_sent:
-                    # Проверяем, отправляли ли уже первое вечернее сообщение сегодня
                     if user_id not in evening_initial_sent[group_id]:
                         cursor.execute("""
                         SELECT COUNT(*) FROM sent_messages 
@@ -171,20 +199,27 @@ async def schedule_tasks(app):
                         evening_initial_sent[group_id][user_id] = cursor.fetchone()[0] > 0
 
                     if not evening_initial_sent[group_id][user_id]:
-                        # Отправляем первое вечернее сообщение
                         await send_report_request_in_group(app, group_id, user_id, "evening", is_reminder=False)
                         evening_initial_sent[group_id][user_id] = True
-                    else:
-                        # Отправляем напоминания каждые 60 минут
-                        if await check_last_message_time(user_id, group_id, "evening", today_str):
-                            await send_report_request_in_group(app, group_id, user_id, "evening", is_reminder=True)
 
-        # Сбрасываем флаги в полночь (до 00:01)
+            # Отправляем сводное сообщение утром после 10:05 (один раз в день)
+            if current_time >= time(10, 5, 0) and group_id not in morning_summary_sent:
+                await send_pending_reports_notification(app, group_id, "morning")
+                morning_summary_sent.add(group_id)
+
+            # Отправляем сводное сообщение вечером после 19:05 (один раз в день)
+            if current_time >= time(19, 5, 0) and group_id not in evening_summary_sent:
+                await send_pending_reports_notification(app, group_id, "evening")
+                evening_summary_sent.add(group_id)
+
+        # Сброс флагов в полночь
         if current_time < time(0, 1, 0):
             morning_initial_sent.clear()
             evening_initial_sent.clear()
+            morning_summary_sent.clear()
+            evening_summary_sent.clear()
 
-        await asyncio.sleep(30)  # Проверяем каждые 30 секунд для точности
+        await asyncio.sleep(30)
 
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
