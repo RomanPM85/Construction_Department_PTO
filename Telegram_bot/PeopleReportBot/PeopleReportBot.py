@@ -47,52 +47,12 @@ WAITING_FOR_REPORT = 1
 waiting_for_report = {}
 
 
-async def send_report_request_in_group(app, group_id, user_id, report_type, is_reminder=False):
-    user_data = GROUPS[group_id][user_id]
-    user_name = user_data["name"]
-
-    if is_reminder:
-        if report_type == "morning":
-            text = f"Напоминание, [{user_name}](tg://user?id={user_id}): пожалуйста, пришлите утренний отчёт о количестве людей на объекте."
-        else:
-            text = f"Напоминание, [{user_name}](tg://user?id={user_id}): пожалуйста, пришлите вечерний отчёт о выполненных работах."
-    else:
-        if report_type == "morning":
-            text = f"Доброе утро, [{user_name}](tg://user?id={user_id})! Пожалуйста, пришлите отчёт о количестве людей на объекте."
-        else:
-            text = f"Добрый вечер, [{user_name}](tg://user?id={user_id})! Пожалуйста, пришлите краткий отчёт о выполненных работах."
-
-    # Создаем клавиатуру с кнопкой для отправки отчёта
-    keyboard = [[InlineKeyboardButton("📝 Отправить отчёт", callback_data=f"report_{report_type}_{user_id}_{group_id}")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    try:
-        await app.bot.send_message(
-            chat_id=group_id,
-            text=text,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=reply_markup
-        )
-
-        # Записываем факт отправки сообщения в базу
-        now = datetime.now(moscow_tz)
-        message_type = f"{report_type}_{'reminder' if is_reminder else 'initial'}"
-        cursor.execute("""
-        INSERT INTO sent_messages (date, user_id, group_id, message_type, sent_at) 
-        VALUES (?, ?, ?, ?, ?)
-        """, (now.strftime("%Y-%m-%d"), user_id, group_id, message_type, now))
-        conn.commit()
-
-    except Exception as e:
-        print(f"Ошибка при отправке сообщения в группу {group_id}: {e}")
-
-
-async def send_pending_reports_notification(app, group_id, report_type):
+async def send_report_request_with_buttons(app, group_id, report_type):
     today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
     users = GROUPS[group_id]
 
+    # Список пользователей, которые должны отправить отчёт
     pending_users = []
-
     for user_id, user_data in users.items():
         cursor.execute("""
         SELECT COUNT(*) FROM reports 
@@ -100,18 +60,74 @@ async def send_pending_reports_notification(app, group_id, report_type):
         """, (today_str, user_id, report_type, group_id))
         sent = cursor.fetchone()[0] > 0
         if not sent:
-            pending_users.append(user_data["name"])
+            pending_users.append((user_id, user_data["name"]))
+
+    if report_type == "morning":
+        header = "☀️ *Напоминание!*\nПожалуйста, пришлите утренний отчёт о количестве людей на объекте:\n"
+    else:
+        header = "🌙 *Напоминание!*\nПожалуйста, пришлите вечерний отчёт о выполненных работах:\n"
 
     if not pending_users:
-        if report_type == "morning":
-            text = "☀️ Все утренние отчёты получены."
+        text = header + "\nВсе отчёты получены. Спасибо!"
+        await app.bot.send_message(chat_id=group_id, text=text, parse_mode=ParseMode.MARKDOWN)
+        return
+
+    # Формируем текст и кнопки
+    buttons = []
+    text_lines = [header]
+    for user_id, name in pending_users:  # Изменено: user_data -> name
+        text_lines.append(f"• {name}")  # Изменено: user_data['name'] -> name
+        buttons.append([InlineKeyboardButton(f"📝 Отправить отчёт ({name})",  # Изменено: user_data['name'] -> name
+                                             callback_data=f"report_{report_type}_{user_id}_{group_id}")])
+
+    text = "\n".join(text_lines)
+    reply_markup = InlineKeyboardMarkup(buttons)
+
+    await app.bot.send_message(
+        chat_id=group_id,
+        text=text,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=reply_markup
+    )
+
+
+async def send_evening_summary_21(app, group_id):
+    today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
+    users = GROUPS[group_id]
+
+    morning_sent = []
+    morning_pending = []
+    evening_sent = []
+    evening_pending = []
+
+    for user_id, user_data in users.items():
+        cursor.execute("""
+        SELECT COUNT(*) FROM reports
+        WHERE date=? AND user_id=? AND report_type='morning' AND group_id=?
+        """, (today_str, user_id, group_id))
+        if cursor.fetchone()[0] > 0:
+            morning_sent.append(user_data["name"])
         else:
-            text = "🌙 Все вечерние отчёты получены."
-    else:
-        if report_type == "morning":
-            text = "☀️ *Ожидаются утренние отчёты от:*\n" + "\n".join(f"• {name}" for name in pending_users)
+            morning_pending.append(user_data["name"])
+
+        cursor.execute("""
+        SELECT COUNT(*) FROM reports
+        WHERE date=? AND user_id=? AND report_type='evening' AND group_id=?
+        """, (today_str, user_id, group_id))
+        if cursor.fetchone()[0] > 0:
+            evening_sent.append(user_data["name"])
         else:
-            text = "🌙 *Ожидаются вечерние отчёты от:*\n" + "\n".join(f"• {name}" for name in pending_users)
+            evening_pending.append(user_data["name"])
+
+    text = "🕘 *Сводка по отчётам за сегодня:*\n\n"
+
+    text += "☀️ *Утренний отчёт:*\n"
+    text += "✅ Отправили:\n" + ("\n".join(f"• {n}" for n in morning_sent) if morning_sent else "• Никто") + "\n"
+    text += "⚠️ Не отправили:\n" + ("\n".join(f"• {n}" for n in morning_pending) if morning_pending else "• Все") + "\n\n"
+
+    text += "🌙 *Вечерний отчёт:*\n"
+    text += "✅ Отправили:\n" + ("\n".join(f"• {n}" for n in evening_sent) if evening_sent else "• Никто") + "\n"
+    text += "⚠️ Не отправили:\n" + ("\n".join(f"• {n}" for n in evening_pending) if evening_pending else "• Все") + "\n"
 
     await app.bot.send_message(
         chat_id=group_id,
@@ -120,104 +136,34 @@ async def send_pending_reports_notification(app, group_id, report_type):
     )
 
 
-async def check_last_message_time(user_id, group_id, message_type, date):
-    """Проверяет, прошло ли 60 минут с последнего сообщения данного типа"""
-    cursor.execute("""
-    SELECT sent_at FROM sent_messages 
-    WHERE date=? AND user_id=? AND group_id=? AND message_type LIKE ?
-    ORDER BY sent_at DESC LIMIT 1
-    """, (date, user_id, group_id, f"%{message_type}%"))
-
-    result = cursor.fetchone()
-    if result:
-        last_sent = datetime.fromisoformat(result[0])
-        if isinstance(last_sent, str):
-            last_sent = datetime.strptime(last_sent, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=moscow_tz)
-        now = datetime.now(moscow_tz)
-        # Возвращаем True, если прошло не менее 60 минут
-        return (now - last_sent) >= timedelta(minutes=60)
-    return True
-
-
 async def schedule_tasks(app):
-    # Флаги для отслеживания отправленных первых сообщений
-    morning_initial_sent = {}
-    evening_initial_sent = {}
-
-    morning_summary_sent = set()  # Чтобы отправить раз в день
-    evening_summary_sent = set()
+    sent_10 = set()
+    sent_19 = set()
+    sent_21 = set()
 
     while True:
         now = datetime.now(moscow_tz)
-        today_str = now.strftime("%Y-%m-%d")
         current_time = now.time()
+        group_ids = GROUPS.keys()
 
-        morning_time = time(10, 0, 0)
-        evening_time = time(19, 0, 0)
+        for group_id in group_ids:
+            if current_time >= time(10, 0) and group_id not in sent_10:
+                await send_report_request_with_buttons(app, group_id, "morning")
+                sent_10.add(group_id)
 
-        for group_id, users in GROUPS.items():
-            if group_id not in morning_initial_sent:
-                morning_initial_sent[group_id] = {}
-            if group_id not in evening_initial_sent:
-                evening_initial_sent[group_id] = {}
+            if current_time >= time(19, 0) and group_id not in sent_19:
+                await send_report_request_with_buttons(app, group_id, "evening")
+                sent_19.add(group_id)
 
-            for user_id in users:
-                # Проверяем, отправлен ли утренний отчет сегодня
-                cursor.execute("""
-                SELECT COUNT(*) FROM reports 
-                WHERE date=? AND user_id=? AND report_type='morning' AND group_id=?
-                """, (today_str, user_id, group_id))
-                morning_sent = cursor.fetchone()[0] > 0
-
-                # Проверяем, отправлен ли вечерний отчет сегодня
-                cursor.execute("""
-                SELECT COUNT(*) FROM reports 
-                WHERE date=? AND user_id=? AND report_type='evening' AND group_id=?
-                """, (today_str, user_id, group_id))
-                evening_sent = cursor.fetchone()[0] > 0
-
-                # Утренние сообщения (с 10:00 до 19:00)
-                if morning_time <= current_time < evening_time and not morning_sent:
-                    if user_id not in morning_initial_sent[group_id]:
-                        cursor.execute("""
-                        SELECT COUNT(*) FROM sent_messages 
-                        WHERE date=? AND user_id=? AND group_id=? AND message_type='morning_initial'
-                        """, (today_str, user_id, group_id))
-                        morning_initial_sent[group_id][user_id] = cursor.fetchone()[0] > 0
-
-                    if not morning_initial_sent[group_id][user_id]:
-                        await send_report_request_in_group(app, group_id, user_id, "morning", is_reminder=False)
-                        morning_initial_sent[group_id][user_id] = True
-
-                # Вечерние сообщения (с 19:00 и далее)
-                if current_time >= evening_time and not evening_sent:
-                    if user_id not in evening_initial_sent[group_id]:
-                        cursor.execute("""
-                        SELECT COUNT(*) FROM sent_messages 
-                        WHERE date=? AND user_id=? AND group_id=? AND message_type='evening_initial'
-                        """, (today_str, user_id, group_id))
-                        evening_initial_sent[group_id][user_id] = cursor.fetchone()[0] > 0
-
-                    if not evening_initial_sent[group_id][user_id]:
-                        await send_report_request_in_group(app, group_id, user_id, "evening", is_reminder=False)
-                        evening_initial_sent[group_id][user_id] = True
-
-            # Отправляем сводное сообщение утром после 10:05 (один раз в день)
-            if current_time >= time(10, 5, 0) and group_id not in morning_summary_sent:
-                await send_pending_reports_notification(app, group_id, "morning")
-                morning_summary_sent.add(group_id)
-
-            # Отправляем сводное сообщение вечером после 19:05 (один раз в день)
-            if current_time >= time(19, 5, 0) and group_id not in evening_summary_sent:
-                await send_pending_reports_notification(app, group_id, "evening")
-                evening_summary_sent.add(group_id)
+            if current_time >= time(21, 0) and group_id not in sent_21:
+                await send_evening_summary_21(app, group_id)
+                sent_21.add(group_id)
 
         # Сброс флагов в полночь
-        if current_time < time(0, 1, 0):
-            morning_initial_sent.clear()
-            evening_initial_sent.clear()
-            morning_summary_sent.clear()
-            evening_summary_sent.clear()
+        if current_time < time(0, 1):
+            sent_10.clear()
+            sent_19.clear()
+            sent_21.clear()
 
         await asyncio.sleep(30)
 
@@ -232,29 +178,44 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user_id = int(parts[2])
         group_id = int(parts[3])
 
-        # Проверяем, что кнопку нажал именно тот пользователь, для которого она предназначена
+        # Проверяем, что кнопку нажал тот пользователь, для которого она предназначена
         if query.from_user.id != target_user_id:
             await query.answer("Эта кнопка предназначена для другого пользователя!", show_alert=True)
+            return
+
+        # Проверяем, не отправлен ли уже отчет за сегодня
+        today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
+        cursor.execute("""
+        SELECT COUNT(*) FROM reports 
+        WHERE date=? AND user_id=? AND report_type=? AND group_id=?
+        """, (today_str, target_user_id, report_type, group_id))
+        if cursor.fetchone()[0] > 0:
+            await query.answer("Вы уже отправили отчет за сегодня!", show_alert=True)
+            return
+
+        # Проверяем, не ожидается ли уже отчет от этого пользователя
+        if target_user_id in waiting_for_report:
+            await query.answer("Вы уже начали процесс отправки отчета. Проверьте личные сообщения!", show_alert=True)
             return
 
         # Сохраняем контекст ожидания отчёта
         waiting_for_report[target_user_id] = {
             "report_type": report_type,
             "group_id": group_id,
-            "message_id": query.message.message_id
+            "message_id": query.message.message_id,
+            "timestamp": datetime.now(moscow_tz)  # Добавляем время начала ожидания
         }
 
-        # Отправляем личное сообщение пользователю с просьбой отправить отчёт
         report_name = "утренний отчёт о количестве людей" if report_type == "morning" else "вечерний отчёт о выполненных работах"
+
+        # Отправляем личное сообщение пользователю с просьбой отправить отчёт
         await context.bot.send_message(
             chat_id=target_user_id,
             text=f"Пожалуйста, отправьте {report_name}:"
         )
 
-        await query.edit_message_text(
-            text=query.message.text + "\n\n_Ожидается отчёт в личных сообщениях..._",
-            parse_mode=ParseMode.MARKDOWN
-        )
+        await query.answer("Проверьте личные сообщения для отправки отчёта.", show_alert=False)
+
 
 
 async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -266,7 +227,28 @@ async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_T
         report_type = report_info["report_type"]
         group_id = report_info["group_id"]
 
+        # Проверяем время ожидания (таймаут 5 минут)
+        if datetime.now(moscow_tz) - report_info["timestamp"] > timedelta(minutes=5):
+            del waiting_for_report[user_id]
+            await update.message.reply_text(
+                "Время ожидания отчёта истекло. Пожалуйста, нажмите кнопку отправки отчёта в группе снова."
+            )
+            return
+
         today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
+
+        # Проверяем еще раз, не был ли отчет уже отправлен
+        cursor.execute("""
+        SELECT COUNT(*) FROM reports 
+        WHERE date=? AND user_id=? AND report_type=? AND group_id=?
+        """, (today_str, user_id, report_type, group_id))
+        if cursor.fetchone()[0] > 0:
+            del waiting_for_report[user_id]
+            await update.message.reply_text(
+                "Вы уже отправили отчет за сегодня!"
+            )
+            return
+
         text = update.message.text
 
         # Сохраняем отчёт в базу данных
