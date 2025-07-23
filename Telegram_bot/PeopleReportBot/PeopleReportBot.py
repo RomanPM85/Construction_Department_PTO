@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes, CallbackQueryHandler, \
     ConversationHandler, CommandHandler
-
+from telegram.error import BadRequest, TelegramError
 from config import TOKEN, GROUPS
 
 moscow_tz = pytz.timezone("Europe/Moscow")
@@ -170,10 +170,18 @@ async def schedule_tasks(app):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
 
-    if query.data.startswith("report_"):
+    try:
+        # Сначала проверяем данные, потом отвечаем на callback
+        if not query.data.startswith("report_"):
+            await query.answer("Неверный формат данных", show_alert=True)
+            return
+
         parts = query.data.split("_")
+        if len(parts) != 4:
+            await query.answer("Неверный формат данных", show_alert=True)
+            return
+
         report_type = parts[1]
         target_user_id = int(parts[2])
         group_id = int(parts[3])
@@ -203,19 +211,74 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "report_type": report_type,
             "group_id": group_id,
             "message_id": query.message.message_id,
-            "timestamp": datetime.now(moscow_tz)  # Добавляем время начала ожидания
+            "timestamp": datetime.now(moscow_tz)
         }
 
         report_name = "утренний отчёт о количестве людей" if report_type == "morning" else "вечерний отчёт о выполненных работах"
 
-        # Отправляем личное сообщение пользователю с просьбой отправить отчёт
+        try:
+            # Пытаемся отправить личное сообщение
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=f"Пожалуйста, отправьте {report_name}:"
+            )
+            await query.answer("Проверьте личные сообщения для отправки отчёта.", show_alert=True)
+
+        except TelegramError as e:
+            # Если не удалось отправить личное сообщение
+            del waiting_for_report[target_user_id]  # Очищаем ожидание
+            error_text = "Не удалось отправить вам личное сообщение. Пожалуйста, напишите боту в личные сообщения и попробуйте снова."
+
+            try:
+                await query.answer(error_text, show_alert=True)
+            except BadRequest:
+                # Если не удалось ответить на callback, отправляем сообщение в группу
+                await context.bot.send_message(
+                    chat_id=group_id,
+                    text=f"@{query.from_user.username}, {error_text}"
+                )
+
+    except BadRequest as e:
+        if "Query is too old" in str(e):
+            # Если callback устарел, отправляем новое сообщение
+            try:
+                await context.bot.send_message(
+                    chat_id=group_id,
+                    text="⚠️ Это сообщение устарело. Пожалуйста, используйте актуальные кнопки для отправки отчета."
+                )
+            except TelegramError:
+                pass  # Игнорируем ошибки при отправке сообщения об устаревшем callback
+
+    except Exception as e:
+        # Логируем неожиданные ошибки
+        print(f"Unexpected error in button_handler: {e}")
+        try:
+            await query.answer("Произошла ошибка. Пожалуйста, попробуйте позже.", show_alert=True)
+        except TelegramError:
+            pass
+
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ошибок"""
+    try:
+        if update.effective_message:
+            chat_id = update.effective_message.chat_id
+        else:
+            return
+
+        error_message = f"Произошла ошибка: {context.error}"
+
+        if isinstance(context.error, BadRequest):
+            if "Query is too old" in str(context.error):
+                error_message = "Это сообщение устарело. Пожалуйста, используйте актуальные кнопки."
+
         await context.bot.send_message(
-            chat_id=target_user_id,
-            text=f"Пожалуйста, отправьте {report_name}:"
+            chat_id=chat_id,
+            text=error_message
         )
 
-        await query.answer("Проверьте личные сообщения для отправки отчёта.", show_alert=False)
-
+    except Exception as e:
+        print(f"Error in error_handler: {e}")
 
 
 async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -304,25 +367,33 @@ async def post_init(application):
 
 
 def main():
-    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+    try:
+        app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
-    # Обработчик нажатий кнопок
-    app.add_handler(CallbackQueryHandler(button_handler))
+        # Обработчик нажатий кнопок
+        app.add_handler(CallbackQueryHandler(button_handler))
 
-    # Обработчик личных сообщений
-    app.add_handler(MessageHandler(
-        filters.TEXT & filters.ChatType.PRIVATE & (~filters.COMMAND),
-        handle_private_message
-    ))
+        # Обработчик личных сообщений
+        app.add_handler(MessageHandler(
+            filters.TEXT & filters.ChatType.PRIVATE & (~filters.COMMAND),
+            handle_private_message
+        ))
 
-    # Обработчик сообщений в группах (если нужно)
-    app.add_handler(MessageHandler(
-        filters.TEXT & filters.ChatType.GROUPS & (~filters.COMMAND),
-        handle_group_message
-    ))
+        # Обработчик сообщений в группах
+        app.add_handler(MessageHandler(
+            filters.TEXT & filters.ChatType.GROUPS & (~filters.COMMAND),
+            handle_group_message
+        ))
 
-    print("Бот запущен и работает...")
-    app.run_polling()
+        # Добавляем обработчик ошибок
+        app.add_error_handler(error_handler)
+
+        print("Бот запущен и работает...")
+        app.run_polling()
+
+    except Exception as e:
+        print(f"Critical error: {e}")
+        # Можно добавить логирование или отправку уведомления администратору
 
 
 if __name__ == "__main__":
