@@ -26,8 +26,8 @@ def compare_pdfs(pdf1, pdf2):
     return changed_pages
 
 if __name__ == "__main__":
-    pdf_file_1 = "36. 18_06_2024_РД_ТХ от 20.06.25.pdf"
-    pdf_file_2 = "18-06-2024-П-ТХ_2025.06.12_согласован.pdf"
+    pdf_file_1 = "file1.pdf"
+    pdf_file_2 = "file2.pdf"
 
     changes = compare_pdfs(pdf_file_1, pdf_file_2)
     if changes:
