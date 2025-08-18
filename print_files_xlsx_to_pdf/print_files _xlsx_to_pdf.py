@@ -2,7 +2,7 @@ from pathlib import Path
 import win32com.client as win32
 
 def convert_xlsx_to_pdf(input_folder: Path, output_folder: Path):
-    output_folder.mkdir(exist_ok=True)  # Создаем папку, если нет
+    output_folder.mkdir(parents=True, exist_ok=True)  # Создаем папку, если нет
 
     excel = win32.gencache.EnsureDispatch('Excel.Application')
     excel.Visible = False
@@ -23,6 +23,10 @@ def convert_xlsx_to_pdf(input_folder: Path, output_folder: Path):
     print('Готово!')
 
 if __name__ == "__main__":
-    current_folder = Path.cwd()
-    output_folder = current_folder / 'output_files'
-    convert_xlsx_to_pdf(current_folder, output_folder)
+    # Путь к папке с файлами xlsx (относительно места запуска скрипта)
+    input_folder = Path.cwd() / 'output_files'
+
+    # Путь к папке для сохранения pdf (относительно места запуска скрипта)
+    output_folder = Path.cwd() / 'output_files_pdf'
+
+    convert_xlsx_to_pdf(input_folder, output_folder)
