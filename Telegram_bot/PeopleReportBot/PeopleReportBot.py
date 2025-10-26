@@ -2,12 +2,14 @@ import asyncio
 from datetime import datetime, time, timedelta
 import pytz
 import sqlite3
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import io
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes, CallbackQueryHandler, \
     ConversationHandler, CommandHandler
 from telegram.error import BadRequest, TelegramError
-from config import TOKEN, GROUPS
+from openpyxl import Workbook
+from config import TOKEN, GROUPS, ALLOWED_USERS
 
 moscow_tz = pytz.timezone("Europe/Moscow")
 
@@ -55,7 +57,7 @@ async def send_report_request_with_buttons(app, group_id, report_type):
     pending_users = []
     for user_id, user_data in users.items():
         cursor.execute("""
-        SELECT COUNT(*) FROM reports 
+        SELECT COUNT(*) FROM reports
         WHERE date=? AND user_id=? AND report_type=? AND group_id=?
         """, (today_str, user_id, report_type, group_id))
         sent = cursor.fetchone()[0] > 0
@@ -95,20 +97,20 @@ async def send_evening_summary_21(app, group_id):
     today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
     users = GROUPS[group_id]
 
-    morning_sent = []
-    morning_pending = []
+    # morning_sent = []
+    # morning_pending = []
     evening_sent = []
     evening_pending = []
 
     for user_id, user_data in users.items():
-        cursor.execute("""
-        SELECT COUNT(*) FROM reports
-        WHERE date=? AND user_id=? AND report_type='morning' AND group_id=?
-        """, (today_str, user_id, group_id))
-        if cursor.fetchone()[0] > 0:
-            morning_sent.append(user_data["name"])
-        else:
-            morning_pending.append(user_data["name"])
+    #     cursor.execute("""
+    #     SELECT COUNT(*) FROM reports
+    #     WHERE date=? AND user_id=? AND report_type='morning' AND group_id=?
+    #     """, (today_str, user_id, group_id))
+    #     if cursor.fetchone()[0] > 0:
+    #         morning_sent.append(user_data["name"])
+    #     else:
+    #         morning_pending.append(user_data["name"])
 
         cursor.execute("""
         SELECT COUNT(*) FROM reports
@@ -121,13 +123,17 @@ async def send_evening_summary_21(app, group_id):
 
     text = "🕘 *Сводка по отчётам за сегодня:*\n\n"
 
-    text += "☀️ *Утренний отчёт:*\n"
-    text += "✅ Отправили:\n" + ("\n".join(f"• {n}" for n in morning_sent) if morning_sent else "• Никто") + "\n"
-    text += "⚠️ Не отправили:\n" + ("\n".join(f"• {n}" for n in morning_pending) if morning_pending else "• Все") + "\n\n"
+    # text += "☀️ *Утренний отчёт:*\n"
+    # text += "✅ Отправили:\n" + ("\n".join(f"• {n}" for n in morning_sent) if morning_sent else "• Никто") + "\n"
+    # text += "⚠️ Не отправили:\n" + ("\n".join(f"• {n}" for n in morning_pending) if morning_pending else "• Все") + "\n\n"
 
     text += "🌙 *Вечерний отчёт:*\n"
-    text += "✅ Отправили:\n" + ("\n".join(f"• {n}" for n in evening_sent) if evening_sent else "• Никто") + "\n"
-    text += "⚠️ Не отправили:\n" + ("\n".join(f"• {n}" for n in evening_pending) if evening_pending else "• Все") + "\n"
+    if evening_sent:
+        text += "✅ Отправили:\n" + ("\n".join(f"• {n}" for n in evening_sent)) + "\n"
+    else:
+        text += "✅ Отправили:\n• Никто\n"
+    if evening_pending:
+        text += "⚠️ Не отправили:\n" + ("\n".join(f"• {n}" for n in evening_pending)) + "\n"
 
     await app.bot.send_message(
         chat_id=group_id,
@@ -140,16 +146,31 @@ async def schedule_tasks(app):
     sent_10 = set()
     sent_19 = set()
     sent_21 = set()
+    sent_930 = False  # Флаг для отслеживания отправленного сообщения в 9:30
 
     while True:
         now = datetime.now(moscow_tz)
         current_time = now.time()
         group_ids = GROUPS.keys()
+        sent_10 = set(group_ids)  # помечаем все группы как уже отправленные утром
+
+        # Отправляем сообщение в 9:30 (один раз для всех групп)
+        if current_time >= time(9, 30) and not sent_930:
+            warning_message = (
+                "ВНИМАНИЕ!!! Все руководители!!! Срочно направьте информацию Амзе о количестве людей на площадке!!!\n"
+                "За непредоставление — штраф 3.000 руб.!!!"
+            )
+            for group_id in group_ids:
+                try:
+                    await app.bot.send_message(chat_id=group_id, text=warning_message)
+                except Exception as e:
+                    print(f"Ошибка при отправке сообщения в группу {group_id}: {e}")
+            sent_930 = True  # Устанавливаем флаг, чтобы сообщение не отправлялось повторно
 
         for group_id in group_ids:
-            if current_time >= time(10, 0) and group_id not in sent_10:
-                await send_report_request_with_buttons(app, group_id, "morning")
-                sent_10.add(group_id)
+            # if current_time >= time(10, 0) and group_id not in sent_10:
+            #     await send_report_request_with_buttons(app, group_id, "morning")
+            #     sent_10.add(group_id)
 
             if current_time >= time(19, 0) and group_id not in sent_19:
                 await send_report_request_with_buttons(app, group_id, "evening")
@@ -164,6 +185,7 @@ async def schedule_tasks(app):
             sent_10.clear()
             sent_19.clear()
             sent_21.clear()
+            sent_930 = False  # Сбрасываем флаг для 9:30
 
         await asyncio.sleep(30)
 
@@ -194,7 +216,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Проверяем, не отправлен ли уже отчет за сегодня
         today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
         cursor.execute("""
-        SELECT COUNT(*) FROM reports 
+        SELECT COUNT(*) FROM reports
         WHERE date=? AND user_id=? AND report_type=? AND group_id=?
         """, (today_str, target_user_id, report_type, group_id))
         if cursor.fetchone()[0] > 0:
@@ -302,7 +324,7 @@ async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_T
 
         # Проверяем еще раз, не был ли отчет уже отправлен
         cursor.execute("""
-        SELECT COUNT(*) FROM reports 
+        SELECT COUNT(*) FROM reports
         WHERE date=? AND user_id=? AND report_type=? AND group_id=?
         """, (today_str, user_id, report_type, group_id))
         if cursor.fetchone()[0] > 0:
@@ -316,7 +338,7 @@ async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_T
 
         # Сохраняем отчёт в базу данных
         cursor.execute("""
-        INSERT INTO reports (date, user_id, response, report_type, company, group_id) 
+        INSERT INTO reports (date, user_id, response, report_type, company, group_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """, (today_str, user_id, text, report_type, GROUPS[group_id][user_id]["company"], group_id))
         conn.commit()
@@ -365,6 +387,76 @@ async def post_init(application):
     """Запускаем фоновые задачи после инициализации приложения"""
     asyncio.create_task(schedule_tasks(application))
 
+# Список user_id, которым разрешена выгрузка
+# ALLOWED_USERS = {1111111111}  # замените на реальные user_id
+
+async def get_reports_xlsx(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id not in ALLOWED_USERS:
+        await update.message.reply_text("У вас нет прав на выполнение этой команды.")
+        return
+
+    if update.effective_chat.type not in ['group', 'supergroup']:
+        await update.message.reply_text("Команду нужно вызывать из группы.")
+        return
+
+    group_id = update.effective_chat.id
+
+    args = context.args
+    if len(args) != 1:
+        await update.message.reply_text("Использование: /get_reports_xlsx <morning|evening>")
+        return
+
+    report_type = args[0].lower()
+    if report_type not in ['morning', 'evening']:
+        await update.message.reply_text("Тип отчёта должен быть 'morning' или 'evening'.")
+        return
+
+    cursor.execute("""
+    SELECT date, user_id, response, company FROM reports
+    WHERE group_id=? AND report_type=?
+    ORDER BY date ASC
+    """, (group_id, report_type))
+
+    rows = cursor.fetchall()
+
+    if not rows:
+        await update.message.reply_text("Отчёты не найдены.")
+        return
+
+    users = GROUPS.get(group_id, {})
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Reports"
+
+    ws.append(["Дата", "Сотрудник", "User ID", "Компания", "Отчёт"])
+
+    for date_str, user_id_report, response, company in rows:
+        user_name = users.get(user_id_report, {}).get("name", f"User {user_id_report}")
+        ws.append([date_str, user_name, user_id_report, company, response])
+
+    file_stream = io.BytesIO()
+    wb.save(file_stream)
+    file_stream.seek(0)
+
+    filename = f"reports_{report_type}_{group_id}.xlsx"
+
+    # Отправляем файл в ЛС пользователю, вызвавшему команду
+    try:
+        await context.bot.send_document(
+            chat_id=user_id,
+            document=InputFile(file_stream, filename=filename),
+            caption=f"Отчёты: {report_type} за весь период"
+        )
+        await update.message.reply_text("Отчёт отправлен вам в личные сообщения.")
+    except Exception as e:
+        await update.message.reply_text(
+            "Не удалось отправить файл в личные сообщения. "
+            "Пожалуйста, начните чат с ботом и попробуйте снова."
+        )
+
 
 def main():
     try:
@@ -384,6 +476,9 @@ def main():
             filters.TEXT & filters.ChatType.GROUPS & (~filters.COMMAND),
             handle_group_message
         ))
+
+        # Обработчик команды в инициализацию бота для выгрузки отчета
+        app.add_handler(CommandHandler("get_reports_xlsx", get_reports_xlsx))
 
         # Добавляем обработчик ошибок
         app.add_error_handler(error_handler)
