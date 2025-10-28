@@ -40,6 +40,30 @@ CREATE TABLE IF NOT EXISTS sent_messages (
     sent_at TIMESTAMP
 )
 """)
+
+# Создаём таблицу для пользователей групп
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS group_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER,
+    user_id INTEGER,
+    user_name TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    UNIQUE(group_id, user_id)
+)
+""")
+
+
+# Создаём таблицу для хранения отправленных уведомлений
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS sent_notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT,
+    notification_type TEXT
+)
+""")
+
 conn.commit()
 
 # Состояние для ConversationHandler — ожидание отчета
@@ -53,9 +77,17 @@ async def send_report_request_with_buttons(app, group_id, report_type):
     today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
     users = GROUPS[group_id]
 
-    # Список пользователей, которые должны отправить отчёт
     pending_users = []
     for user_id, user_data in users.items():
+        # Проверяем, что пользователь в группе
+        try:
+            member = await app.bot.get_chat_member(chat_id=group_id, user_id=user_id)
+            if member.status in ['left', 'kicked']:
+                continue  # Пользователь не в группе — пропускаем
+        except Exception as e:
+            print(f"Ошибка проверки участника {user_id} в группе {group_id}: {e}")
+            continue  # При ошибке тоже пропускаем
+
         cursor.execute("""
         SELECT COUNT(*) FROM reports
         WHERE date=? AND user_id=? AND report_type=? AND group_id=?
@@ -74,12 +106,11 @@ async def send_report_request_with_buttons(app, group_id, report_type):
         await app.bot.send_message(chat_id=group_id, text=text, parse_mode=ParseMode.MARKDOWN)
         return
 
-    # Формируем текст и кнопки
     buttons = []
     text_lines = [header]
-    for user_id, name in pending_users:  # Изменено: user_data -> name
-        text_lines.append(f"• {name}")  # Изменено: user_data['name'] -> name
-        buttons.append([InlineKeyboardButton(f"📝 Отправить отчёт ({name})",  # Изменено: user_data['name'] -> name
+    for user_id, name in pending_users:
+        text_lines.append(f"• {name}")
+        buttons.append([InlineKeyboardButton(f"📝 Отправить отчёт ({name})",
                                              callback_data=f"report_{report_type}_{user_id}_{group_id}")])
 
     text = "\n".join(text_lines)
@@ -97,20 +128,18 @@ async def send_evening_summary_21(app, group_id):
     today_str = datetime.now(moscow_tz).strftime("%Y-%m-%d")
     users = GROUPS[group_id]
 
-    # morning_sent = []
-    # morning_pending = []
     evening_sent = []
     evening_pending = []
 
     for user_id, user_data in users.items():
-    #     cursor.execute("""
-    #     SELECT COUNT(*) FROM reports
-    #     WHERE date=? AND user_id=? AND report_type='morning' AND group_id=?
-    #     """, (today_str, user_id, group_id))
-    #     if cursor.fetchone()[0] > 0:
-    #         morning_sent.append(user_data["name"])
-    #     else:
-    #         morning_pending.append(user_data["name"])
+        # Проверяем, что пользователь в группе
+        try:
+            member = await app.bot.get_chat_member(chat_id=group_id, user_id=user_id)
+            if member.status in ['left', 'kicked']:
+                continue  # Пользователь не в группе — пропускаем
+        except Exception as e:
+            print(f"Ошибка проверки участника {user_id} в группе {group_id}: {e}")
+            continue
 
         cursor.execute("""
         SELECT COUNT(*) FROM reports
@@ -122,10 +151,6 @@ async def send_evening_summary_21(app, group_id):
             evening_pending.append(user_data["name"])
 
     text = "🕘 *Сводка по отчётам за сегодня:*\n\n"
-
-    # text += "☀️ *Утренний отчёт:*\n"
-    # text += "✅ Отправили:\n" + ("\n".join(f"• {n}" for n in morning_sent) if morning_sent else "• Никто") + "\n"
-    # text += "⚠️ Не отправили:\n" + ("\n".join(f"• {n}" for n in morning_pending) if morning_pending else "• Все") + "\n\n"
 
     text += "🌙 *Вечерний отчёт:*\n"
     if evening_sent:
@@ -146,16 +171,21 @@ async def schedule_tasks(app):
     sent_10 = set()
     sent_19 = set()
     sent_21 = set()
-    sent_930 = False  # Флаг для отслеживания отправленного сообщения в 9:30
 
     while True:
         now = datetime.now(moscow_tz)
         current_time = now.time()
+        today_str = now.strftime("%Y-%m-%d")
         group_ids = GROUPS.keys()
-        sent_10 = set(group_ids)  # помечаем все группы как уже отправленные утром
 
-        # Отправляем сообщение в 9:30 (один раз для всех групп)
-        if current_time >= time(9, 30) and not sent_930:
+        # Проверяем в базе, отправлялось ли сообщение 9:30 сегодня
+        cursor.execute("""
+        SELECT COUNT(*) FROM sent_notifications
+        WHERE date=? AND notification_type='sent_930'
+        """, (today_str,))
+        sent_930_sent = cursor.fetchone()[0] > 0
+
+        if current_time >= time(9, 30) and not sent_930_sent:
             warning_message = (
                 "ВНИМАНИЕ!!! Все руководители!!! Срочно направьте информацию Амзе о количестве людей на площадке!!!\n"
                 "За непредоставление — штраф 3.000 руб.!!!"
@@ -165,7 +195,12 @@ async def schedule_tasks(app):
                     await app.bot.send_message(chat_id=group_id, text=warning_message)
                 except Exception as e:
                     print(f"Ошибка при отправке сообщения в группу {group_id}: {e}")
-            sent_930 = True  # Устанавливаем флаг, чтобы сообщение не отправлялось повторно
+
+            # Записываем факт отправки в базу
+            cursor.execute("""
+            INSERT INTO sent_notifications (date, notification_type) VALUES (?, ?)
+            """, (today_str, 'sent_930'))
+            conn.commit()
 
         for group_id in group_ids:
             # if current_time >= time(10, 0) and group_id not in sent_10:
@@ -185,7 +220,6 @@ async def schedule_tasks(app):
             sent_10.clear()
             sent_19.clear()
             sent_21.clear()
-            sent_930 = False  # Сбрасываем флаг для 9:30
 
         await asyncio.sleep(30)
 
@@ -279,7 +313,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except TelegramError:
             pass
 
-
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик ошибок"""
     try:
@@ -301,7 +334,6 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"Error in error_handler: {e}")
-
 
 async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -377,18 +409,32 @@ async def handle_private_message(update: Update, context: ContextTypes.DEFAULT_T
                 "Для отправки отчёта используйте кнопку в групповом чате."
             )
 
-
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # В группе обрабатываем только команды, остальное игнорируем
-    pass
+    message = update.effective_message
+    group_id = message.chat.id
+    user = message.from_user
 
+    if user.is_bot:
+        return
+
+    try:
+        cursor.execute("""
+            INSERT OR IGNORE INTO group_users (group_id, user_id, user_name, first_name, last_name)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            group_id,
+            user.id,
+            user.username or '',
+            user.first_name or '',
+            user.last_name or ''
+        ))
+        conn.commit()
+    except Exception as e:
+        print(f"Ошибка при сохранении пользователя {user.id} в группу {group_id}: {e}")
 
 async def post_init(application):
     """Запускаем фоновые задачи после инициализации приложения"""
     asyncio.create_task(schedule_tasks(application))
-
-# Список user_id, которым разрешена выгрузка
-# ALLOWED_USERS = {1111111111}  # замените на реальные user_id
 
 async def get_reports_xlsx(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -457,6 +503,61 @@ async def get_reports_xlsx(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Пожалуйста, начните чат с ботом и попробуйте снова."
         )
 
+async def get_group_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ALLOWED_USERS:
+        await update.message.reply_text("У вас нет прав на выполнение этой команды.")
+        return
+
+    if update.effective_chat.type not in ['group', 'supergroup']:
+        await update.message.reply_text("Команду нужно вызывать из группы.")
+        return
+
+    group_id = update.effective_chat.id
+
+    cursor.execute("""
+        SELECT user_id, user_name, first_name, last_name FROM group_users
+        WHERE group_id=?
+        ORDER BY first_name ASC
+    """, (group_id,))
+
+    rows = cursor.fetchall()
+    if not rows:
+        await update.message.reply_text("Пользователи в группе не найдены.")
+        return
+
+    lines = []
+    for uid, username, first_name, last_name in rows:
+        name_display = username if username else f"{first_name} {last_name}".strip()
+        lines.append(f"• {name_display} (ID: {uid})")
+
+    text = "Список пользователей в группе:\n" + "\n".join(lines)
+
+    try:
+        await context.bot.send_message(chat_id=user_id, text=text)
+        await update.message.reply_text("Список пользователей отправлен вам в личные сообщения.")
+    except Exception as e:
+        print(f"Ошибка при отправке списка пользователей в ЛС: {e}")
+        await update.message.reply_text(
+            "Не удалось отправить вам сообщение в личные сообщения. "
+            "Пожалуйста, начните чат с ботом и попробуйте снова."
+        )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    if user_id not in ALLOWED_USERS:
+        await update.message.reply_text("У вас нет прав на выполнение этой команды.")
+        return
+
+    help_text = (
+        "Доступные команды:\n"
+        "/get_reports_xlsx <morning|evening> — выгрузить отчёты в Excel\n"
+        "/get_group_users — получить список пользователей группы\n"
+        "/help — показать это сообщение"
+    )
+    await update.message.reply_text(help_text)
+
 
 def main():
     try:
@@ -479,6 +580,12 @@ def main():
 
         # Обработчик команды в инициализацию бота для выгрузки отчета
         app.add_handler(CommandHandler("get_reports_xlsx", get_reports_xlsx))
+
+        # Обработчик команды в инициализацию бота для выгрузки пользователей
+        app.add_handler(CommandHandler("get_group_users", get_group_users))
+
+        # Обработчик команды для вызова доступных команд
+        app.add_handler(CommandHandler("help", help_command))
 
         # Добавляем обработчик ошибок
         app.add_error_handler(error_handler)
