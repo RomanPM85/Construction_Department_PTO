@@ -2,6 +2,9 @@ import logging
 import os
 import datetime
 from pathlib import Path
+import asyncio
+from collections import defaultdict
+
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup
 )
@@ -22,14 +25,22 @@ client = Client(WEBDAV_OPTIONS)
 LOCAL_SAVE_DIR = Path(__file__).parent / 'downloads'
 LOCAL_SAVE_DIR.mkdir(exist_ok=True)
 
-# Состояния разговора для суперпользователя в личке
+# Состояния для ConversationHandler
 SELECT_OBJECT, SELECT_ROOM_OPTION, INPUT_ROOM_NUMBER, WAIT_PHOTO = range(4)
+
+# Хранилище данных пользователей
 user_data = {}
 
-# --- Логика для личных сообщений суперпользователя ---
+# Буфер для сбора фото из альбомов
+photo_album_buffer = defaultdict(list)
+photo_album_timers = {}
+ALBUM_TIMEOUT = 3  # секунды ожидания для сбора всех фото альбома
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало работы с ботом"""
     user_id = update.message.from_user.id
+
     if user_id in ALLOWED_SUPERUSER_IDS and update.message.chat.type == 'private':
         keyboard = [
             [InlineKeyboardButton("ФОК", callback_data='object_FOK')],
@@ -46,7 +57,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Привет! Пришлите фото в группу или лично — я загружу его на облако.")
         return ConversationHandler.END
 
+
 async def object_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка выбора объекта"""
     query = update.callback_query
     await query.answer()
 
@@ -64,7 +77,9 @@ async def object_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return SELECT_ROOM_OPTION
 
+
 async def room_option_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка выбора опции помещения"""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
@@ -74,17 +89,40 @@ async def room_option_selected(update: Update, context: ContextTypes.DEFAULT_TYP
         return INPUT_ROOM_NUMBER
     else:
         user_data[user_id]['room'] = None
-        await query.edit_message_text("Отправьте фото для загрузки.")
+        keyboard = [[InlineKeyboardButton("📷 Загрузить фото", callback_data='upload_photo')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "Готово! Нажмите кнопку для загрузки фото:",
+            reply_markup=reply_markup
+        )
         return WAIT_PHOTO
 
+
 async def input_room_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ввода номера помещения"""
     user_id = update.message.from_user.id
     room_number = update.message.text.strip()
     user_data[user_id]['room'] = room_number
-    await update.message.reply_text(f"Номер помещения установлен: {room_number}\nОтправьте фото для загрузки.")
+
+    keyboard = [[InlineKeyboardButton("📷 Загрузить фото", callback_data='upload_photo')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        f"Номер помещения установлен: {room_number}\nНажмите кнопку для загрузки фото:",
+        reply_markup=reply_markup
+    )
     return WAIT_PHOTO
 
+
+async def upload_photo_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка нажатия кнопки загрузки фото"""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("Отправьте фото для загрузки (можно несколько):")
+    return WAIT_PHOTO
+
+
 async def photo_handler_private(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка фото в личных сообщениях"""
     user_id = update.message.from_user.id
     if user_id not in ALLOWED_SUPERUSER_IDS:
         return
@@ -94,72 +132,185 @@ async def photo_handler_private(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("Пожалуйста, отправьте фото.")
         return WAIT_PHOTO
 
-    data = user_data.get(user_id, {})
-    room = data.get('room')
-    obj = data.get('object', 'Без_объекта')
+    media_group_id = update.message.media_group_id
 
-    today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+    # Одиночное фото
+    if not media_group_id:
+        # Очистка старых буферов альбомов
+        for mgid in list(photo_album_buffer.keys()):
+            photo_album_buffer.pop(mgid, None)
+            if mgid in photo_album_timers:
+                photo_album_timers[mgid].cancel()
+                photo_album_timers.pop(mgid, None)
 
-    if room:
-        remote_folder = f"{BASE_REMOTE_FOLDER}/{room}"
-    else:
-        remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
+        largest_photo = photos[-1]
+        await process_single_photo(update, context, largest_photo)
+        return WAIT_PHOTO
 
-    uploaded_files = []
+    # Фото из альбома
+    largest_photo = photos[-1]
+    photo_album_buffer[media_group_id].append(largest_photo)
 
-    for photo in photos:
-        file_id = photo.file_id
-        new_file = await context.bot.get_file(file_id)
+    # Логирование для отладки
+    logging.info(f"Добавлено фото в альбом {media_group_id}. Всего в буфере: {len(photo_album_buffer[media_group_id])}")
 
-        file_path = LOCAL_SAVE_DIR / f"{file_id}.jpg"
-        await new_file.download_to_drive(str(file_path))
+    # Запускаем таймер только если он ещё не запущен
+    if media_group_id not in photo_album_timers:
+        async def process_album():
+            await asyncio.sleep(ALBUM_TIMEOUT)
+            logging.info(f"Обработка альбома {media_group_id} с {len(photo_album_buffer[media_group_id])} фото")
 
-        remote_path = f"{remote_folder}/{file_path.name}"
+            await process_album_photos(update, context, photo_album_buffer[media_group_id])
 
-        try:
-            if not client.check(remote_folder):
-                client.mkdir(remote_folder)
+            # Очистка буфера и таймера
+            photo_album_buffer.pop(media_group_id, None)
+            photo_album_timers.pop(media_group_id, None)
 
-            client.upload_sync(remote_path, str(file_path))
-
-            if file_path.exists():
-                os.remove(file_path)
-
-            uploaded_files.append(remote_path)
-
-        except Exception as e:
-            logging.error(f"Ошибка при загрузке файла {file_path.name}: {e}")
-            # Можно собрать ошибки в список, если нужно
-
-    if uploaded_files:
-        files_list_str = '\n'.join(uploaded_files)
-        message_text = f"Успешно загружены файлы:\n{files_list_str}"
-    else:
-        message_text = "Не удалось загрузить ни одного фото."
-
-    keyboard = [
-        [InlineKeyboardButton("Завершить загрузку", callback_data='finish_upload')],
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    # Отправляем одно сообщение с результатом и кнопкой
-    await update.message.reply_text(message_text + "\n\nОтправьте ещё фото или завершите загрузку:", reply_markup=reply_markup)
+        photo_album_timers[media_group_id] = asyncio.create_task(process_album())
+        logging.info(f"Запущен таймер для альбома {media_group_id}")
 
     return WAIT_PHOTO
 
-async def wait_photo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def process_single_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, photo):
+    """Обработка одиночного фото"""
+    user_id = update.message.from_user.id
+    data = user_data.setdefault(user_id, {})
+
+    # Загрузка фото
+    uploaded_path = await upload_photo_to_cloud(context, photo, data)
+
+    if uploaded_path:
+        message_text = f"✅ Фото загружено:\n`{uploaded_path}`"
+    else:
+        message_text = "❌ Не удалось загрузить фото."
+
+    keyboard = [
+        [
+            InlineKeyboardButton("📷 Загрузить ещё", callback_data='upload_more'),
+            InlineKeyboardButton("✅ Завершить", callback_data='finish_upload')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        message_text,
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+
+async def process_album_photos(update: Update, context: ContextTypes.DEFAULT_TYPE, photos):
+    """Обработка альбома фото"""
+    user_id = update.message.from_user.id
+    data = user_data.setdefault(user_id, {})
+
+    uploaded_count = 0
+    failed_count = 0
+
+    for photo in photos:
+        uploaded_path = await upload_photo_to_cloud(context, photo, data)
+        if uploaded_path:
+            uploaded_count += 1
+        else:
+            failed_count += 1
+
+    total_photos = len(photos)
+
+    if uploaded_count > 0:
+        message_text = f"✅ Загружено {uploaded_count} из {total_photos} фото"
+        if failed_count > 0:
+            message_text += f"\n❌ Не удалось загрузить: {failed_count}"
+    else:
+        message_text = "❌ Не удалось загрузить фото"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("📷 Загрузить ещё", callback_data='upload_more'),
+            InlineKeyboardButton("✅ Завершить", callback_data='finish_upload')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(message_text, reply_markup=reply_markup)
+
+
+async def upload_photo_to_cloud(context: ContextTypes.DEFAULT_TYPE, photo, user_data_dict):
+    """Загрузка фото на облако"""
+    try:
+        file_id = photo.file_id
+        new_file = await context.bot.get_file(file_id)
+
+        # Генерация уникального имени файла
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        file_name = f"photo_{timestamp}_{file_id[-8:]}.jpg"
+        file_path = LOCAL_SAVE_DIR / file_name
+
+        await new_file.download_to_drive(str(file_path))
+
+        # Определение папки для загрузки
+        room = user_data_dict.get('room')
+        obj = user_data_dict.get('object', 'Без_объекта')
+        today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+
+        if room:
+            remote_folder = f"{BASE_REMOTE_FOLDER}/{room}"
+        else:
+            remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
+
+        remote_path = f"{remote_folder}/{file_name}"
+
+        # Создание папки если не существует
+        if not client.check(remote_folder):
+            client.mkdir(remote_folder)
+
+        # Загрузка на облако
+        client.upload_sync(remote_path, str(file_path))
+
+        # Удаление локального файла
+        if file_path.exists():
+            os.remove(file_path)
+
+        return remote_path
+
+    except Exception as e:
+        logging.error(f"Ошибка при загрузке файла: {e}")
+        return None
+
+
+async def upload_more_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка кнопки 'Загрузить ещё'"""
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("Отправьте фото для загрузки (можно несколько):")
+    return WAIT_PHOTO
+
+
+async def finish_upload_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка кнопки 'Завершить'"""
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
 
-    if query.data == 'finish_upload':
-        user_data.pop(user_id, None)
-        await query.edit_message_text("Загрузка завершена.")
-        return ConversationHandler.END
+    # Очистка данных пользователя
+    if user_id in user_data:
+        user_data.pop(user_id)
+
+    keyboard = [[InlineKeyboardButton("🔄 Начать заново", callback_data='restart')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        "✅ Загрузка завершена!",
+        reply_markup=reply_markup
+    )
+    return ConversationHandler.END
+
 
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Перезапуск процесса"""
     query = update.callback_query
     await query.answer()
+
     keyboard = [
         [InlineKeyboardButton("ФОК", callback_data='object_FOK')],
         [InlineKeyboardButton("МДЦ", callback_data='object_MDC')],
@@ -172,13 +323,15 @@ async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return SELECT_OBJECT
 
+
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отмена операции"""
     await update.message.reply_text("Операция отменена.")
     return ConversationHandler.END
 
-# --- Логика для групп и супергрупп ---
 
 async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка фото в группах"""
     if not update.message or not update.message.photo:
         return
 
@@ -186,12 +339,15 @@ async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE
     file_id = photo.file_id
     new_file = await context.bot.get_file(file_id)
 
-    file_path = LOCAL_SAVE_DIR / f"{file_id}.jpg"
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    file_name = f"group_photo_{timestamp}_{file_id[-8:]}.jpg"
+    file_path = LOCAL_SAVE_DIR / file_name
+
     await new_file.download_to_drive(str(file_path))
 
     today_str = datetime.datetime.now().strftime('%Y-%m-%d')
     remote_folder = f"{BASE_REMOTE_FOLDER}/{today_str}"
-    remote_path = f"{remote_folder}/{file_path.name}"
+    remote_path = f"{remote_folder}/{file_name}"
 
     try:
         if not client.check(remote_folder):
@@ -202,11 +358,11 @@ async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE
         if file_path.exists():
             os.remove(file_path)
 
-        # Можно не отвечать в группе, чтобы не спамить
-        # await update.message.reply_text("Фото успешно загружено.")
+        logging.info(f"Фото из группы загружено: {remote_path}")
 
     except Exception as e:
         logging.error(f"Ошибка при загрузке файла в группе: {e}")
+
 
 if __name__ == '__main__':
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
@@ -214,12 +370,20 @@ if __name__ == '__main__':
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            SELECT_OBJECT: [CallbackQueryHandler(object_selected, pattern=r'^object_')],
-            SELECT_ROOM_OPTION: [CallbackQueryHandler(room_option_selected, pattern=r'^room_')],
-            INPUT_ROOM_NUMBER: [MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, input_room_number)],
+            SELECT_OBJECT: [
+                CallbackQueryHandler(object_selected, pattern=r'^object_')
+            ],
+            SELECT_ROOM_OPTION: [
+                CallbackQueryHandler(room_option_selected, pattern=r'^room_')
+            ],
+            INPUT_ROOM_NUMBER: [
+                MessageHandler(filters.TEXT & filters.ChatType.PRIVATE, input_room_number)
+            ],
             WAIT_PHOTO: [
                 MessageHandler(filters.PHOTO & filters.ChatType.PRIVATE, photo_handler_private),
-                CallbackQueryHandler(wait_photo_callback, pattern='^finish_upload$')
+                CallbackQueryHandler(upload_photo_button, pattern='^upload_photo$'),
+                CallbackQueryHandler(upload_more_callback, pattern='^upload_more$'),
+                CallbackQueryHandler(finish_upload_callback, pattern='^finish_upload$')
             ],
         },
         fallbacks=[CommandHandler('cancel', cancel)],
@@ -229,7 +393,7 @@ if __name__ == '__main__':
     application.add_handler(conv_handler)
     application.add_handler(CallbackQueryHandler(restart, pattern='^restart$'))
 
-    # Обработчик фото в группах и супергруппах
+    # Обработчик фото в группах
     application.add_handler(
         MessageHandler(
             filters.PHOTO & (filters.ChatType.GROUP | filters.ChatType.SUPERGROUP),
