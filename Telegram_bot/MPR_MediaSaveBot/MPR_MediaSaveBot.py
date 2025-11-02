@@ -54,11 +54,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def object_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка выбора объекта"""
     query = update.callback_query
     await query.answer()
 
-    obj = query.data.split('_')[1]
+    logging.info(f"object_selected called with data: {query.data}")
+
+    try:
+        obj = query.data.split('_')[1]
+    except Exception as e:
+        logging.error(f"Error parsing callback_data: {e}")
+        await query.edit_message_text("Ошибка обработки выбора объекта.")
+        return ConversationHandler.END
+
     user_data[query.from_user.id] = {'object': obj}
 
     keyboard = [
@@ -303,6 +310,10 @@ async def finish_upload_callback(update: Update, context: ContextTypes.DEFAULT_T
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    user_id = query.from_user.id
+    if user_id in user_data:
+        user_data.pop(user_id)
 
     keyboard = [[InlineKeyboardButton(obj["name"], callback_data=obj["callback_data"])] for obj in OBJECTS]
     reply_markup = InlineKeyboardMarkup(keyboard)
