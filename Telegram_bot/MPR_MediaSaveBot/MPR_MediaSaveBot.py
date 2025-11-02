@@ -13,7 +13,7 @@ from telegram.ext import (
     ContextTypes, CallbackQueryHandler, ConversationHandler
 )
 from webdav3.client import Client
-from config import WEBDAV_OPTIONS, TELEGRAM_BOT_TOKEN, BASE_REMOTE_FOLDER, ALLOWED_SUPERUSER_IDS
+from config import OBJECTS, WEBDAV_OPTIONS, TELEGRAM_BOT_TOKEN, BASE_REMOTE_FOLDER, ALLOWED_SUPERUSER_IDS
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -38,15 +38,10 @@ ALBUM_TIMEOUT = 3  # секунды ожидания для сбора всех 
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало работы с ботом"""
     user_id = update.message.from_user.id
 
     if user_id in ALLOWED_SUPERUSER_IDS and update.message.chat.type == 'private':
-        keyboard = [
-            [InlineKeyboardButton("ФОК", callback_data='object_FOK')],
-            [InlineKeyboardButton("МДЦ", callback_data='object_MDC')],
-            [InlineKeyboardButton("ГрШК21", callback_data='object_GrShK21')],
-        ]
+        keyboard = [[InlineKeyboardButton(obj["name"], callback_data=obj["callback_data"])] for obj in OBJECTS]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "Выберите объект:",
