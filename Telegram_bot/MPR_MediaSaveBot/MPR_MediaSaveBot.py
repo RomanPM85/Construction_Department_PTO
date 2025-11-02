@@ -89,11 +89,9 @@ async def room_option_selected(update: Update, context: ContextTypes.DEFAULT_TYP
         return INPUT_ROOM_NUMBER
     else:
         user_data[user_id]['room'] = None
-        keyboard = [[InlineKeyboardButton("📷 Загрузить фото", callback_data='upload_photo')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Можно сразу отправить сообщение, что теперь можно отправлять фото
         await query.edit_message_text(
-            "Готово! Нажмите кнопку для загрузки фото:",
-            reply_markup=reply_markup
+            "Вы можете отправлять фото для загрузки. Фото будут сохранены в папку с текущей датой."
         )
         return WAIT_PHOTO
 
@@ -256,7 +254,8 @@ async def upload_photo_to_cloud(context: ContextTypes.DEFAULT_TYPE, photo, user_
         if room:
             remote_folder = f"{BASE_REMOTE_FOLDER}/{room}"
         else:
-            remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
+            # remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
+            remote_folder = f"{BASE_REMOTE_FOLDER}/{today_str}"
 
         remote_path = f"{remote_folder}/{file_name}"
 
@@ -339,13 +338,15 @@ async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE
     file_id = photo.file_id
     new_file = await context.bot.get_file(file_id)
 
+    user_id = update.message.from_user.id  # ID пользователя, который загрузил фото
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    file_name = f"group_photo_{timestamp}_{file_id[-8:]}.jpg"
+    file_name = f"{user_id}_photo_{timestamp}_{file_id[-8:]}.jpg"
     file_path = LOCAL_SAVE_DIR / file_name
 
     await new_file.download_to_drive(str(file_path))
 
     today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+    # remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
     remote_folder = f"{BASE_REMOTE_FOLDER}/{today_str}"
     remote_path = f"{remote_folder}/{file_name}"
 
