@@ -13,7 +13,8 @@ from telegram.ext import (
     ContextTypes, CallbackQueryHandler, ConversationHandler
 )
 from webdav3.client import Client
-from config import OBJECTS, WEBDAV_OPTIONS, TELEGRAM_BOT_TOKEN, BASE_REMOTE_FOLDER, ALLOWED_SUPERUSER_IDS
+from config import (OBJECTS, WEBDAV_OPTIONS, TELEGRAM_BOT_TOKEN, BASE_REMOTE_FOLDER, ALLOWED_SUPERUSER_IDS,
+                    GROUP_ID_TO_OBJECT)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -60,7 +61,7 @@ async def object_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"object_selected called with data: {query.data}")
 
     try:
-        obj = query.data.split('_')[1]
+        obj = query.data.split('_', 1)[1]
     except Exception as e:
         logging.error(f"Error parsing callback_data: {e}")
         await query.edit_message_text("Ошибка обработки выбора объекта.")
@@ -254,10 +255,10 @@ async def upload_photo_to_cloud(context: ContextTypes.DEFAULT_TYPE, photo, user_
         today_str = datetime.datetime.now().strftime('%Y-%m-%d')
 
         if room:
-            remote_folder = f"{BASE_REMOTE_FOLDER}/{room}"
+            remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{room}"
         else:
-            # remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
-            remote_folder = f"{BASE_REMOTE_FOLDER}/{today_str}"
+            remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
+            # remote_folder = f"{BASE_REMOTE_FOLDER}/{today_str}"
 
         remote_path = f"{remote_folder}/{file_name}"
 
@@ -331,15 +332,21 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка фото в группах"""
     if not update.message or not update.message.photo:
+        return
+
+    chat_id = update.message.chat_id  # ID группы
+    obj = GROUP_ID_TO_OBJECT.get(chat_id)
+
+    if not obj:
+        logging.warning(f"Неизвестный ID группы {chat_id}, пропуск загрузки.")
         return
 
     photo = update.message.photo[-1]
     file_id = photo.file_id
     new_file = await context.bot.get_file(file_id)
 
-    user_id = update.message.from_user.id  # ID пользователя, который загрузил фото
+    user_id = update.message.from_user.id
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     file_name = f"{user_id}_photo_{timestamp}_{file_id[-8:]}.jpg"
     file_path = LOCAL_SAVE_DIR / file_name
@@ -347,8 +354,7 @@ async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE
     await new_file.download_to_drive(str(file_path))
 
     today_str = datetime.datetime.now().strftime('%Y-%m-%d')
-    # remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
-    remote_folder = f"{BASE_REMOTE_FOLDER}/{today_str}"
+    remote_folder = f"{BASE_REMOTE_FOLDER}/{obj}/{today_str}"
     remote_path = f"{remote_folder}/{file_name}"
 
     try:
