@@ -301,15 +301,10 @@ async def finish_upload_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Перезапуск процесса"""
     query = update.callback_query
     await query.answer()
 
-    keyboard = [
-        [InlineKeyboardButton("ФОК", callback_data='object_FOK')],
-        [InlineKeyboardButton("МДЦ", callback_data='object_MDC')],
-        [InlineKeyboardButton("ГрШК21", callback_data='object_GrShK21')],
-    ]
+    keyboard = [[InlineKeyboardButton(obj["name"], callback_data=obj["callback_data"])] for obj in OBJECTS]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
         "Выберите объект:",
