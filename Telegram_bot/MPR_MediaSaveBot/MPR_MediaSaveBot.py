@@ -14,7 +14,7 @@ from telegram.ext import (
 )
 from webdav3.client import Client
 from config import (OBJECTS, WEBDAV_OPTIONS, TELEGRAM_BOT_TOKEN, BASE_REMOTE_FOLDER, ALLOWED_SUPERUSER_IDS,
-                    GROUP_ID_TO_OBJECT)
+                    GROUP_ID_TO_OBJECT, ALLOWED_USER_IDS)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -336,8 +336,15 @@ async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     chat_id = update.message.chat_id  # ID группы
-    obj = GROUP_ID_TO_OBJECT.get(chat_id)
+    user_id = update.message.from_user.id
 
+    # Проверка разрешённых пользователей для группы
+    allowed_users = ALLOWED_USER_IDS.get(chat_id, set())
+    if user_id not in allowed_users:
+        logging.warning(f"Пользователь {user_id} не разрешён в группе {chat_id}, пропуск загрузки.")
+        return
+
+    obj = GROUP_ID_TO_OBJECT.get(chat_id)
     if not obj:
         logging.warning(f"Неизвестный ID группы {chat_id}, пропуск загрузки.")
         return
@@ -346,7 +353,6 @@ async def photo_handler_group(update: Update, context: ContextTypes.DEFAULT_TYPE
     file_id = photo.file_id
     new_file = await context.bot.get_file(file_id)
 
-    user_id = update.message.from_user.id
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     file_name = f"{user_id}_photo_{timestamp}_{file_id[-8:]}.jpg"
     file_path = LOCAL_SAVE_DIR / file_name
