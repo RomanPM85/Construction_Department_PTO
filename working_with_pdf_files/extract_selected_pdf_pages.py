@@ -1,90 +1,74 @@
 from pdfrw import PdfReader, PdfWriter
 from pathlib import Path
-import sys
 
 
 def parse_page_spec(page_spec):
-    """
-    Парсит спецификацию страницы: число или строка вида 'start-end'.
-    Возвращает список номеров страниц (начиная с 1).
-    """
+    """Парсит элемент списка страниц: число → [число], строка 'N-M' → [N, ..., M]."""
     if isinstance(page_spec, int):
         return [page_spec]
     elif isinstance(page_spec, str) and '-' in page_spec:
-        try:
-            start, end = map(int, page_spec.split('-'))
-            if start > end:
-                raise ValueError(f"Некорректный диапазон: {page_spec}. Начало диапазона больше конца.")
-            return list(range(start, end + 1))
-        except ValueError:
-            raise ValueError(f"Некорректный формат диапазона: {page_spec}. Ожидаемый формат: 'start-end'")
+        start, end = map(int, page_spec.split('-'))
+        if start > end:
+            raise ValueError(f"Некорректный диапазон: {page_spec}")
+        return list(range(start, end + 1))
     else:
-        raise ValueError(f"Некорректная спецификация страницы: {page_spec}")
+        raise ValueError(f"Неподдерживаемый формат: {page_spec}")
 
 
+def expand_page_list(page_list):
+    """Преобразует список спецификаций в отсортированный список уникальных номеров страниц."""
+    result = set()
+    for spec in page_list:
+        result.update(parse_page_spec(spec))
+    return sorted(result)
 
-def extract_pdf_pages(pdf_files, output_folder="extracted_pages"):
-    """
-    Извлекает указанные страницы из PDF‑файлов.
-
-    Args:
-        pdf_files (list): Список кортежей (путь_к_файлу, список_страниц).
-            Список страниц может содержать числа и строки вида 'start-end'.
-        output_folder (str): Папка для сохранения результатов.
-    """
-    # Создаём папку для результатов
-    output_path = Path(output_folder)
-    output_path.mkdir(exist_ok=True)
+def extract_pdf_pages(pdf_files, output_folder_name):
+    """Извлекает указанные страницы из PDF‑файлов в заданную папку."""
+    output_folder = Path(output_folder_name)
+    output_folder.mkdir(exist_ok=True)
 
     for pdf_path, page_specs in pdf_files:
         try:
-            # Проверяем существование файла
             if not Path(pdf_path).exists():
                 print(f"Файл не найден: {pdf_path}")
                 continue
 
             input_pdf = PdfReader(pdf_path)
             pdf_writer = PdfWriter()
+            total_pages = len(input_pdf.pages)
 
-            # Парсим все спецификации страниц в единый список номеров
-            all_page_numbers = []
-            for spec in page_specs:
-                all_page_numbers.extend(parse_page_spec(spec))
+            page_numbers = expand_page_list(page_specs)
+            valid_pages_extracted = False
 
-            for page_num in all_page_numbers:
-                # Преобразуем номер страницы (начиная с 1) в индекс (начиная с 0)
+            for page_num in page_numbers:
                 idx = page_num - 1
-
-                # Проверяем, что индекс страницы существует
-                if idx < 0 or idx >= len(input_pdf.pages):
-                    print(f"Страница {page_num} не существует в файле {pdf_path}")
+                if idx < 0 or idx >= total_pages:
+                    print(f"Страница {page_num} не существует в {pdf_path} (всего: {total_pages})")
                     continue
+
                 pdf_writer.addPage(input_pdf.pages[idx])
+                valid_pages_extracted = True
 
-            # Формируем имя файла для вывода
-            base_name = Path(pdf_path).stem  # Имя файла без расширения
-            output_file = output_path / f"{base_name}_extracted.pdf"
-
-            # Сохраняем результат
-            pdf_writer.write(output_file)
-            print(f"Извлечено: {output_file}")
+            if valid_pages_extracted:
+                base_name = Path(pdf_path).stem
+                output_path = output_folder / f"{base_name}_ведомость.pdf"
+                pdf_writer.write(output_path)
+                print(f"Извлечено: {output_path}")
+            else:
+                print(f"Для {pdf_path} не найдено валидных страниц.")
 
         except Exception as e:
-            print(f"Ошибка при обработке файла {pdf_path}: {e}")
+            print(f"Ошибка при обработке {pdf_path}: {e}")
 
-    print(f"Все страницы обработаны. Результаты сохранены в папку '{output_folder}'.")
-
-
+    print(f"Обработка завершена. Результаты в папке '{output_folder_name}'.")
 
 if __name__ == "__main__":
-    # Пример использования (можно заменить на свои данные)
-    sample_files = [
-        ("example1.pdf", [25, 26]),
-        ("example2.pdf", ["135-183"]),
-        ("example3.pdf", [5, 6]),
-        ("example4.pdf", [7]),
-        ("example5.pdf", [25, 26, 27, 28, 29]),
-        ("example6.pdf", [9, 10, 11]),
+    # Конфигурация
+    OUTPUT_FOLDER = "extracted_pages"
+    PDF_FILES = [
+        ("файл1.pdf", ["82-83"]),
+        # Добавьте другие файлы по необходимости:
+        ("файл2.pdf", [1, "5-7", 10]),
     ]
 
-    extract_pdf_pages(sample_files)
+    extract_pdf_pages(PDF_FILES, OUTPUT_FOLDER)
