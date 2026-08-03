@@ -1,7 +1,9 @@
 import os
 import requests
+import tokenize
+import io
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.platypus import SimpleDocTemplate, Spacer, Preformatted
+from reportlab.platypus import SimpleDocTemplate, Preformatted
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -9,8 +11,75 @@ from reportlab.pdfbase.ttfonts import TTFont
 EXCLUDE_DIRS = {'.venv', 'venv', '__pycache__', '.git', '.idea', '.vscode', 'build', 'dist'}
 
 
+def wrap_long_strings_in_code(code_text, max_len=110):
+    """
+    Использует модуль tokenize для поиска сверхдлинных строк
+    и их безопасного разбиения на синтаксически корректный многострочный Python-текст.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(code_text).readline))
+    except Exception:
+        # Если код имеет синтаксические ошибки, возвращаем как есть, чтобы не сломать логику
+        return code_text
+
+    string_tokens = [t for t in tokens if t.type == tokenize.STRING]
+    lines = code_text.splitlines(keepends=True)
+
+    # Обрабатываем токены с конца файла к началу, чтобы индексы строк/символов не съезжали
+    for token in reversed(string_tokens):
+        s_val = token.string
+
+        # Пропускаем многострочные комментарии/docstrings (они уже оформлены через ''' или """)
+        if s_val.startswith(('"""', "'''")):
+            continue
+
+        start_line, start_col = token.start
+        end_line, end_col = token.end
+
+        # Если строка целиком длиннее лимита
+        if start_col + len(s_val) > max_len and len(s_val) > 20:
+            # Определяем тип кавычек и префиксы (r, f, b)
+            quote_char = '"' if s_val.endswith('"') else "'"
+            prefix = ""
+            for char in ['r', 'R', 'f', 'F', 'b', 'B']:
+                if s_val.startswith(char):
+                    prefix += char
+
+            # Извлекаем чистый контент строки без внешних кавычек и префиксов
+            content = s_val[len(prefix) + 1: -1]
+
+            # Вычисляем размер чанков для нарезки текста
+            chunk_size = max(20, max_len - start_col - len(prefix) - 5)
+            chunks = [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
+
+            if len(chunks) <= 1:
+                continue
+
+            # Получаем отступ текущей строки
+            orig_line = lines[start_line - 1]
+            indent = orig_line[:len(orig_line) - len(orig_line.lstrip())]
+            extra_indent = indent + "    "
+
+            # Собираем красивую и синтаксически верную структуру неявного объединения строк в Python
+            new_text_lines = []
+            new_text_lines.append(f"(\n{extra_indent}{prefix}{quote_char}{chunks[0]}{quote_char}")
+            for chunk in chunks[1:]:
+                new_text_lines.append(f"{extra_indent}{prefix}{quote_char}{chunk}{quote_char}")
+            new_text_lines[-1] += f"\n{indent})"
+
+            new_string_repr = "\n".join(new_text_lines)
+
+            # Заменяем старую строку в кодовой базе (работает для однострочных литералов)
+            if start_line == end_line:
+                target_line = lines[start_line - 1]
+                replaced = target_line[:start_col] + new_string_repr + target_line[end_col:]
+                lines[start_line - 1] = replaced
+
+    return "".join(lines)
+
+
 def register_cyrillic_font():
-    """Находит или скачивает чистый моноширинный шрифт для копирования без багов."""
+    """Находит или скачивает моноширинный шрифт с поддержкой кириллицы."""
     font_name = "CleanCourier"
     possible_paths = [
         "C:\\Windows\\Fonts\\cour.ttf",  # Windows
@@ -25,7 +94,6 @@ def register_cyrillic_font():
             except Exception:
                 continue
 
-    # Резервный проверенный шрифт, если системные недоступны
     fallback_font_path = os.path.join(os.getcwd(), "DejaVuSansMono.ttf")
     if not os.path.exists(fallback_font_path):
         print("Скачиваю надежный шрифт с поддержкой кириллицы...")
@@ -45,7 +113,7 @@ def register_cyrillic_font():
 
 
 def py_to_pdf(file_path, output_pdf_path, font_name):
-    """Конвертирует .py в чистый PDF идеальный для копирования и AI-анализа."""
+    """Конвертирует .py в PDF с умным переносом строк без разрывов синтаксиса."""
     file_name = os.path.basename(file_path)
 
     try:
@@ -59,7 +127,10 @@ def py_to_pdf(file_path, output_pdf_path, font_name):
             print(f"Не удалось прочитать файл {file_name}: {e}")
             return
 
-    # Задаем альбомную ориентацию A4 для максимальной ширины строк (около 145 символов)
+    # 1. Сначала обрабатываем сверхдлинные строки силами токенайзера
+    processed_code = wrap_long_strings_in_code(code_content, max_len=120)
+
+    # 2. Настраиваем широкий ландшафтный документ
     doc = SimpleDocTemplate(
         output_pdf_path,
         pagesize=landscape(A4),
@@ -67,22 +138,30 @@ def py_to_pdf(file_path, output_pdf_path, font_name):
     )
 
     styles = getSampleStyleSheet()
-
-    # Используем Preformatted: он сохраняет все пробелы, табы и структуру 1-в-1
     code_style = ParagraphStyle(
         'CleanCodeStyle',
         parent=styles['Normal'],
         fontName=font_name,
-        fontSize=8.5,  # Компактный размер для предотвращения случайных переносов
-        leading=11,
+        fontSize=8.5,
+        leading=11,  # Межстрочный интервал
     )
 
-    # Мета-данные в начале файла (закомментированы, чтобы не ломать код при копировании всего PDF)
-    header_text = f"# ==========================================\n# Source Code: {file_name}\n# ==========================================\n\n"
-    full_text_content = header_text + code_content
+    story = []
 
-    # Стандартный Preformatted гарантирует идеальное извлечение текста программами
-    story = [Preformatted(full_text_content, code_style)]
+    # Добавляем безопасную шапку
+    story.append(Preformatted("# ==========================================", code_style))
+    story.append(Preformatted(f"# Source Code: {file_name}", code_style))
+    story.append(Preformatted("# ==========================================\n", code_style))
+
+    # 🌟 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Разбиваем код посимвольно на строки
+    # и каждую строку пускаем отдельным элементом в story.
+    # Это заставит ReportLab переносить страницы ровно МЕЖДУ строками.
+    for line in processed_code.splitlines():
+        # Если в коде есть пустая строка, сохраняем её для читаемости
+        if not line.strip():
+            story.append(Preformatted("", code_style))
+        else:
+            story.append(Preformatted(line, code_style))
 
     try:
         doc.build(story)
