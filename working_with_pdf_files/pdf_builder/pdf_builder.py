@@ -2,14 +2,17 @@ import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import PyPDF2
+# Подключаем библиотеку для поддержки Drag-and-Drop
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
 
 class PDFExtractorApp:
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Advanced PDF Extractor")
-        self.root.geometry("700x600")
+        # Фиксация авторства в заголовке окна программы
+        self.root.title("Advanced PDF Extractor | Developed by MAMCHIY ROMAN")
+        self.root.geometry("700x620")
 
         # Внутреннее хранилище для загруженных файлов
         self.loaded_files = {}
@@ -17,7 +20,7 @@ class PDFExtractorApp:
 
         self.setup_ui()
     def setup_ui(self):
-        # Вкладки: Рабочая область и Справка (man)
+        # Создание вкладок: Рабочая область и Справка (man)
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
@@ -27,7 +30,7 @@ class PDFExtractorApp:
         self.notebook.add(self.main_frame, text="📁 Рабочая область")
         self.notebook.add(self.man_frame, text="📖 Руководство (man)")
 
-        # --- РАБОЧАЯ ОБЛАСТЬ ---
+        # --- КНОПКИ УПРАВЛЕНИЯ ---
         btn_frame = tk.Frame(self.main_frame)
         btn_frame.pack(fill=tk.X, padx=10, pady=10)
 
@@ -47,7 +50,7 @@ class PDFExtractorApp:
         )
         self.btn_clear.pack(side=tk.LEFT, padx=5)
 
-        # Таблица файлов
+        # --- ТАБЛИЦА ФАЙЛОВ ---
         table_frame = tk.Frame(self.main_frame)
         table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
@@ -62,11 +65,11 @@ class PDFExtractorApp:
         self.tree.column("pages", width=100, anchor=tk.CENTER)
         self.tree.pack(fill=tk.BOTH, expand=True)
 
-        # Извлечение страниц
+        # --- БЛОК ВВОДА КОМАНД ---
         extract_frame = tk.LabelFrame(
             self.main_frame, text=" Комбинированное извлечение страниц ", padx=10, pady=10
         )
-        extract_frame.pack(fill=tk.X, padx=10, pady=10)
+        extract_frame.pack(fill=tk.X, padx=10, pady=5)
 
         tk.Label(
             extract_frame,
@@ -89,6 +92,19 @@ class PDFExtractorApp:
         )
         self.btn_extract.pack(side=tk.RIGHT, padx=5)
 
+        # ТЕКСТОВАЯ ПОДПИСЬ АВТОРА ВНИЗУ ИНТЕРФЕЙСА
+        author_label = tk.Label(
+            self.main_frame,
+            text="© Developed by MAMCHIY ROMAN",
+            font=("Arial", 9, "italic"),
+            fg="#777777"
+        )
+        author_label.pack(side=tk.BOTTOM, fill=tk.X, pady=5)
+
+        # РЕГИСТРАЦИЯ DRAG-AND-DROP НА ТАБЛИЦУ
+        self.tree.drop_target_register(DND_FILES)
+        self.tree.dnd_bind('<<Drop>>', self.handle_file_drop)
+
         # Отрисовка страницы руководства
         self.setup_man_page()
     def setup_man_page(self):
@@ -107,6 +123,10 @@ class PDFExtractorApp:
 
 НАЗВАНИЕ
     pdf-extractor — продвинутая утилита сборки и нарезки PDF.
+
+ЗАГРУЗКА ДОКУМЕНТОВ
+    1. Нажатием кнопки "Загрузить PDF файлы".
+    2. Перетаскиванием (Drag-and-Drop) файлов мышкой прямо на таблицу.
 
 СИНТАКСИС КОМАНД
     Базовый блок: FnLm1,m2,m3-m4
@@ -129,28 +149,51 @@ class PDFExtractorApp:
         Все указанные листы соберутся в ОДИН выходной PDF в порядке их перечисления.
 
         Пример: F1L3,4,6;F2L5
-        Действие: Взять листы 3, 4, 6 из первого файла, затем прикрепить к ним 
-        лист 5 из второго файла и сохранить как новый общий документ.
-
-        Пример: F1L1-3,5;F2L10;F1L8
-        Действие: Склеит страницы 1,2,3,5 из F1, затем страницу 10 из F2, 
-        и добавит в конец страницу 8 из F1.
 
 ПРАВИЛА:
     * Номера страниц указываются от 1 (человеческий отсчет).
     * Регистр букв игнорируется (f1l3 и F1L3 эквивалентны).
     * Порядок страниц в итоговом файле в точности повторяет вашу команду.
+
+АВТОР
+    Программа разработана независимым разработчиком: MAMCHIY ROMAN.
+    Все права на исходный код и алгоритмы парсинга принадлежат автору.
 """
         man_text.insert(tk.END, help_content)
         man_text.config(state=tk.DISABLED)
+
     def load_files(self):
         file_paths = filedialog.askopenfilenames(
             title="Выберите PDF файлы", filetypes=[("PDF Files", "*.pdf")]
         )
         if not file_paths:
             return
+        self.add_files_to_list(file_paths)
 
+    def handle_file_drop(self, event):
+        # Получаем строку путей из события drag-and-drop
+        data = event.data
+        file_paths = []
+
+        # Windows передает пути с пробелами внутри фигурных скобок: {C:/My Path/1.pdf} C:/Path2/2.pdf
+        # Аккуратно парсим эту строку на отдельные чистые пути
+        if '{' in data:
+            parts = data.split('}')
+            for part in parts:
+                part = part.replace('{', '').strip()
+                if part.lower().endswith('.pdf'):
+                    file_paths.append(part)
+        else:
+            file_paths = [p.strip() for p in data.split(' ') if p.strip().lower().endswith('.pdf')]
+
+        if file_paths:
+            self.add_files_to_list(file_paths)
+
+    def add_files_to_list(self, file_paths):
         for path in file_paths:
+            # Нормализуем слеши пути под текущую ОС
+            path = os.path.normpath(path)
+
             if any(f["path"] == path for f in self.loaded_files.values()):
                 continue
             try:
@@ -265,6 +308,6 @@ class PDFExtractorApp:
         except Exception as e:
             messagebox.showerror("Критическая ошибка", f"Не удалось собрать файл:\n{e}")
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = TkinterDnD.Tk()  # Активация TkinterDnD
     app = PDFExtractorApp(root)
     root.mainloop()
